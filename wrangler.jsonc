@@ -1,0 +1,22 @@
+{
+	"$schema": "https://unpkg.com/wrangler@4.147.0/config-schema.json",
+	"name": "thread",
+	"main": "src/worker.js",
+	"compatibility_date": "2026-10-01",
+	"workers_dev": true,
+	"preview_urls": false,
+	"ai": {
+		"binding": "AI"
+	},
+	"assets": {
+		"directory": "public",
+		"binding": "ASSETS",
+		"run_worker_first": ["/api/*"]
+	},
+	"vars": {
+		"AI_GATEWAY_ID": "default"
+	},
+	"observability": {
+		"enabled": true
+	}
+}
