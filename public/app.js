@@ -1,5 +1,6 @@
 import { renderMarkdown } from "./markdown.js";
 import * as db from "./db.js";
+import { createSettings } from "./settings.js";
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -25,6 +26,12 @@ const els = {
 	modelName: $("modelName"),
 	sheet: $("sheet"),
 	modelList: $("modelList"),
+	settingsBtn: $("settingsBtn"),
+	settings: $("settings"),
+	settingsBack: $("settingsBack"),
+	settingsReset: $("settingsReset"),
+	settingsTitle: $("settingsTitle"),
+	settingsBody: $("settingsBody"),
 	lock: $("lock"),
 	lockForm: $("lockForm"),
 	passInput: $("passInput"),
@@ -72,6 +79,20 @@ const state = {
 };
 
 class AuthError extends Error {}
+
+let instructionsTimer = 0;
+const settings = createSettings({
+	storage,
+	el,
+	icon,
+	getChat: () => state.chat,
+	onChatInstructions(value) {
+		const chat = state.chat;
+		chat.instructions = value.trim() ? value : undefined;
+		clearTimeout(instructionsTimer);
+		instructionsTimer = setTimeout(() => persist(chat), 400);
+	},
+});
 
 function init() {
 	fitViewport();
@@ -367,6 +388,7 @@ function renderAssistant(view, msg, live) {
 	const notes = [];
 	if (msg.stopped) notes.push("Stopped");
 	if (msg.truncated) notes.push("Hit length limit");
+	if (msg.toolCall) notes.push("Tool call requested (not run)");
 	view.error.hidden = !msg.error;
 	view.error.textContent = msg.error || "";
 	view.actions.hidden = live;
@@ -416,6 +438,8 @@ async function send() {
 		toast(`${model.name} can't read images. Pick a model marked Vision.`);
 		return;
 	}
+	const params = paramsFor(model);
+	if (!params) return;
 
 	const chat = state.chat;
 	const userMsg = { id: uid(), role: "user", content: text, time: Date.now() };
@@ -429,21 +453,34 @@ async function send() {
 	renderAttachments();
 	appendMessage(userMsg, false);
 	updateEmpty();
-	await respond(chat);
+	await respond(chat, params);
+}
+
+function paramsFor(model) {
+	try {
+		return settings.params(model);
+	} catch (err) {
+		toast(`${model.name} settings: ${err.message}`);
+		return null;
+	}
 }
 
 async function regenerate() {
 	if (state.controller) return;
 	const chat = state.chat;
-	if (chat.messages.at(-1)?.role === "assistant") chat.messages.pop();
-	if (chat.messages.at(-1)?.role !== "user") return;
+	const lastUser = chat.messages.at(-1)?.role === "assistant" ? chat.messages.at(-2) : chat.messages.at(-1);
+	if (lastUser?.role !== "user") return;
 	if (!state.models.length) await loadModels().catch(() => {});
-	if (!currentModel()) return;
+	const model = currentModel();
+	if (!model) return;
+	const params = paramsFor(model);
+	if (!params) return;
+	if (chat.messages.at(-1)?.role === "assistant") chat.messages.pop();
 	renderConversation();
-	await respond(chat);
+	await respond(chat, params);
 }
 
-async function respond(chat) {
+async function respond(chat, params) {
 	const model = currentModel();
 	const history = toApiMessages(chat.messages);
 	const msg = { id: uid(), role: "assistant", content: "", reasoning: "", model: model.id, time: Date.now() };
@@ -475,7 +512,12 @@ async function respond(chat) {
 		const res = await api("/api/chat", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ model: model.id, messages: history }),
+			body: JSON.stringify({
+				model: model.id,
+				messages: history,
+				params,
+				instructions: settings.instructionsFor(chat),
+			}),
 			signal: controller.signal,
 		});
 		if (!res.ok) throw new Error(await errorText(res));
@@ -484,8 +526,9 @@ async function respond(chat) {
 				const e = evt.error ?? evt.errors[0];
 				throw new Error(typeof e === "string" ? e : e.message || "Model error");
 			}
-			const choice = evt.choices?.[0];
+			const choice = evt.choices?.find((c) => (c.index ?? 0) === 0);
 			const delta = choice?.delta || {};
+			if (delta.tool_calls || choice?.finish_reason === "tool_calls") msg.toolCall = true;
 			const reasoning = delta.reasoning_content ?? delta.reasoning;
 			if (reasoning) {
 				thinkStart ??= performance.now();
@@ -662,6 +705,7 @@ function showScrim() {
 }
 
 function closeOverlays() {
+	closeSettings();
 	els.drawer.classList.remove("open");
 	els.sheet.classList.remove("open");
 	els.drawer.inert = true;
@@ -702,6 +746,7 @@ function renderModelList() {
 			const info = el("div", "info");
 			const name = el("div", "name", m.name);
 			if (m.vision) name.append(el("span", "badge", "Vision"));
+			if (settings.hasCustom(m.id)) name.append(el("span", "badge muted", "Custom"));
 			const ctx = m.context >= 1000000 ? `${Math.round(m.context / 1048576)}M` : `${Math.round(m.context / 1000)}K`;
 			const sub = el("div", "sub", `${m.vendor} · ${ctx} context · $${m.price[0]} / $${m.price[1]}`);
 			info.append(name, sub);
@@ -711,6 +756,24 @@ function renderModelList() {
 			return row;
 		}),
 	);
+}
+
+function openSettings() {
+	const model = currentModel();
+	if (!model) return;
+	closeOverlays();
+	els.settingsTitle.textContent = model.name;
+	settings.render(els.settingsBody, model);
+	els.settingsBody.scrollTop = 0;
+	els.settings.inert = false;
+	els.settings.classList.add("open");
+}
+
+function closeSettings() {
+	if (!els.settings.classList.contains("open")) return;
+	document.activeElement?.blur();
+	els.settings.classList.remove("open");
+	els.settings.inert = true;
 }
 
 function selectModel(id) {
@@ -844,6 +907,17 @@ function bindEvents() {
 	});
 	els.scrim.addEventListener("click", closeOverlays);
 	els.modelBtn.addEventListener("click", openSheet);
+	els.settingsBtn.addEventListener("click", openSettings);
+	els.settingsBack.addEventListener("click", () => {
+		closeSettings();
+		openSheet();
+	});
+	els.settingsReset.addEventListener("click", () => {
+		const model = currentModel();
+		if (!model || !confirm(`Reset all ${model.name} parameters to defaults?`)) return;
+		settings.reset(model.id);
+		settings.render(els.settingsBody, model);
+	});
 	els.modelList.addEventListener("click", (e) => {
 		const row = e.target.closest(".model-row");
 		if (row) selectModel(row.dataset.id);

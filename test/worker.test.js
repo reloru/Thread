@@ -83,6 +83,67 @@ test("streams chat through the gateway with an output cap", async () => {
 	assert.deepEqual(calls[0].options, { gateway: { id: "default" } });
 });
 
+test("sends validated params and instructions as a system message", async () => {
+	const { env, calls } = makeEnv();
+	const res = await worker.fetch(
+		req("/api/chat", {
+			method: "POST",
+			body: {
+				model: VISION,
+				messages: [{ role: "user", content: "hi" }],
+				params: { temperature: 0.2, max_completion_tokens: 100 },
+				instructions: "  Be brief.  ",
+			},
+		}),
+		env,
+	);
+	assert.equal(res.status, 200);
+	const input = calls[0].input;
+	assert.deepEqual(input.messages[0], { role: "system", content: "Be brief." });
+	assert.equal(input.temperature, 0.2);
+	assert.equal(input.max_completion_tokens, 100);
+	assert.equal(input.stream, true);
+});
+
+test("keeps max_tokens from params without adding the default cap", async () => {
+	const { env, calls } = makeEnv();
+	await worker.fetch(
+		req("/api/chat", { method: "POST", body: { model: VISION, messages: [{ role: "user", content: "x" }], params: { max_tokens: 50 } } }),
+		env,
+	);
+	assert.equal(calls[0].input.max_tokens, 50);
+	assert.equal(calls[0].input.max_completion_tokens, undefined);
+});
+
+test("rejects invalid params and instructions with 400", async () => {
+	const { env, calls } = makeEnv();
+	const bad = [
+		{ params: { temperature: 3 } },
+		{ params: { stream: false } },
+		{ params: "x" },
+		{ instructions: 5 },
+		{ instructions: "x".repeat(20001) },
+	];
+	for (const extra of bad) {
+		const res = await worker.fetch(
+			req("/api/chat", { method: "POST", body: { model: VISION, messages: [{ role: "user", content: "x" }], ...extra } }),
+			env,
+		);
+		assert.equal(res.status, 400, JSON.stringify(extra).slice(0, 80));
+		assert.ok((await res.json()).error);
+	}
+	assert.equal(calls.length, 0);
+});
+
+test("empty instructions add no system message", async () => {
+	const { env, calls } = makeEnv();
+	await worker.fetch(
+		req("/api/chat", { method: "POST", body: { model: VISION, messages: [{ role: "user", content: "x" }], instructions: "   " } }),
+		env,
+	);
+	assert.equal(calls[0].input.messages[0].role, "user");
+});
+
 test("omits gateway when AI_GATEWAY_ID is empty", async () => {
 	const { env, calls } = makeEnv({ AI_GATEWAY_ID: "" });
 	await worker.fetch(req("/api/chat", { method: "POST", body: { model: VISION, messages: [{ role: "user", content: "x" }] } }), env);

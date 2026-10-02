@@ -14,7 +14,7 @@
 		"run_worker_first": ["/api/*"]
 	},
 	"vars": {
-		"AI_GATEWAY_ID": "default"
+		"AI_GATEWAY_ID": ""
 	},
 	"observability": {
 		"enabled": true

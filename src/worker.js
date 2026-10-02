@@ -1,10 +1,10 @@
-import { DEFAULT_MODEL, MODELS } from "./models.js";
+import { DEFAULT_MAX_TOKENS, DEFAULT_MODEL, MODELS } from "./models.js";
+import { ParamError, sanitizeParams } from "../public/params.js";
 
-// gpt-oss-120b truncates at 256 tokens when no cap is sent; reasoning tokens count toward this cap.
-const MAX_COMPLETION_TOKENS = 16384;
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
 const MAX_MESSAGES = 400;
 const MAX_IMAGES = 24;
+const MAX_INSTRUCTIONS = 20000;
 const IMAGE_PREFIX = /^data:image\/(png|jpeg|webp|gif);base64,/;
 const IMAGE_PLACEHOLDER = "[An image was attached here, but the current model cannot view images.]";
 
@@ -25,6 +25,7 @@ export default {
 			return await api(request, env, url);
 		} catch (err) {
 			if (err instanceof HttpError) return json({ error: err.message }, err.status);
+			if (err instanceof ParamError) return json({ error: err.message }, 400);
 			console.error("api error", err);
 			return json({ error: "Internal error" }, 500);
 		}
@@ -64,15 +65,20 @@ async function chat(request, env) {
 	const model = MODELS.find((m) => m.id === body?.model);
 	if (!model) throw new HttpError(400, "Unknown model.");
 	const messages = sanitizeMessages(body.messages, model.vision);
+	const params = sanitizeParams(body.params, model);
+	const instructions = sanitizeInstructions(body.instructions);
+	if (instructions) messages.unshift({ role: "system", content: instructions });
+
+	const input = { ...params, messages, stream: true };
+	if (input.max_completion_tokens === undefined && input.max_tokens === undefined) {
+		// gpt-oss-120b truncates at 256 tokens when no cap is sent.
+		input.max_completion_tokens = DEFAULT_MAX_TOKENS;
+	}
 
 	const options = env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID } } : undefined;
 	let stream;
 	try {
-		stream = await env.AI.run(
-			model.id,
-			{ messages, stream: true, max_completion_tokens: MAX_COMPLETION_TOKENS },
-			options,
-		);
+		stream = await env.AI.run(model.id, input, options);
 	} catch (err) {
 		console.error("AI.run failed", model.id, err);
 		throw new HttpError(502, `Model request failed: ${err?.message || String(err)}`);
@@ -109,6 +115,13 @@ export function sanitizeMessages(input, vision) {
 
 	if (out[out.length - 1].role !== "user") throw new HttpError(400, "Last message must be from the user.");
 	return out;
+}
+
+export function sanitizeInstructions(input) {
+	if (input === undefined || input === null) return "";
+	if (typeof input !== "string") throw new HttpError(400, "instructions must be a string.");
+	if (input.length > MAX_INSTRUCTIONS) throw new HttpError(400, `Instructions are limited to ${MAX_INSTRUCTIONS} characters.`);
+	return input.trim();
 }
 
 async function authorized(request, passcode) {

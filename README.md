@@ -20,8 +20,12 @@ Live: https://thread.reloru.workers.dev
 | Kimi K2.6 | yes | 0.95 / 4.00 |
 | GLM-5.3 | no | 1.40 / 4.40 |
 
-- Chat history is stored on the device in IndexedDB. Nothing is stored server-side.
-- Requests are routed through the `default` AI Gateway for logs and analytics (`AI_GATEWAY_ID` in `wrangler.jsonc`; set it to `""` to bypass).
+- Settings (gear in the model picker):
+  - Instructions sent as the system message: one text for all chats, optionally replaced per chat.
+  - Per-model parameters: reasoning effort and thinking toggles, temperature, top P/K, penalties, max output tokens, stop sequences, seed, response format, logit bias. Ranges and options follow each model's schema, narrowed where the service behaves differently (noted in the panel).
+  - Advanced JSON: any other schema field for that model (tools, n, logprobs, …), sent as-is. The Worker validates every parameter against the same rules (`public/params.js`).
+- Chat history and settings are stored on the device (IndexedDB and localStorage). Nothing is stored server-side.
+- Requests go straight to Workers AI. To route them through an AI Gateway for logs and analytics, set `AI_GATEWAY_ID` in `wrangler.jsonc` to the gateway's ID.
 - Access is gated by a passcode held as a Worker secret. The app asks for it once per device.
 
 ## Passcode
@@ -48,6 +52,7 @@ The AI binding always calls the real Workers AI service, so local requests are b
 
 ## Layout
 
-- `src/worker.js`: API (`/api/auth`, `/api/models`, `/api/chat`), passcode check, request validation, Workers AI streaming.
-- `src/models.js`: model allowlist.
+- `src/worker.js`: API (`/api/auth`, `/api/models`, `/api/chat`), passcode check, request and parameter validation, Workers AI streaming.
+- `src/models.js`: model allowlist and per-model parameter specs.
+- `public/params.js`: parameter validation shared by the app and the Worker; `public/settings.js`: settings panel.
 - `public/`: static app (no build step). `markdown.js` is the renderer; every text path is HTML-escaped and links are limited to http(s) and mailto. `_headers` sets a strict CSP.
