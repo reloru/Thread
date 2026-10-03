@@ -35,6 +35,9 @@
 		<symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
 		<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
 		<symbol id="i-gear" viewBox="0 0 24 24"><path d="M18.84 10.50 L21.13 10.85 L21.13 13.15 L18.84 13.50 L17.90 15.77 L19.27 17.64 L17.64 19.27 L15.77 17.90 L13.50 18.84 L13.15 21.13 L10.85 21.13 L10.50 18.84 L8.23 17.90 L6.36 19.27 L4.73 17.64 L6.10 15.77 L5.16 13.50 L2.87 13.15 L2.87 10.85 L5.16 10.50 L6.10 8.23 L4.73 6.36 L6.36 4.73 L8.23 6.10 L10.50 5.16 L10.85 2.87 L13.15 2.87 L13.50 5.16 L15.77 6.10 L17.64 4.73 L19.27 6.36 L17.90 8.23Z"/><circle cx="12" cy="12" r="3"/></symbol>
+		<symbol id="i-code" viewBox="0 0 24 24"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></symbol>
+		<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></symbol>
+		<symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
 		<symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
 		<symbol id="i-logo" viewBox="0 0 64 64"><path d="M14 30c0-10 8-17 18-17s18 7 18 17-8 17-18 17c-2.6 0-5-.4-7.2-1.3L15 50l2.6-8.4C15.3 38.8 14 34.6 14 30z"/><path d="M23 27c4-4 7 4 11 0s7 4 10 1M23 34c4-4 7 4 11 0"/></symbol>
 	</svg>
@@ -60,13 +63,17 @@
 		<footer class="composer">
 			<button type="button" class="to-bottom" id="toBottom" aria-label="Scroll to latest"><svg><use href="#i-down"/></svg></button>
 			<div class="notice" id="notice" hidden></div>
+			<div class="tool-chips" id="toolChips">
+				<button type="button" class="chip" data-tool="python" aria-pressed="false"><svg><use href="#i-code"/></svg>Code</button>
+				<button type="button" class="chip" data-tool="web" aria-pressed="false"><svg><use href="#i-globe"/></svg>Web</button>
+			</div>
 			<div class="attachments" id="attachments"></div>
 			<form class="composer-box" id="form">
 				<button type="button" class="icon-btn attach" id="attachBtn" aria-label="Attach image"><svg><use href="#i-plus"/></svg></button>
 				<textarea id="input" rows="1" placeholder="Message" enterkeyhint="send" autocomplete="off"></textarea>
 				<button type="submit" class="send" id="sendBtn" aria-label="Send" disabled><svg><use href="#i-up"/></svg></button>
 			</form>
-			<input type="file" id="file" accept="image/*" multiple hidden>
+			<input type="file" id="file" accept="image/*,.csv,.docx,.et,.htm,.html,.numbers,.odp,.ods,.odt,.otp,.pdf,.potx,.ppsm,.ppsx,.pptm,.pptx,.xls,.xlsb,.xlsm,.xlsx,.xml" multiple hidden>
 		</footer>
 	</div>
 

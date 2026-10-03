@@ -23,6 +23,8 @@ jobs:
           node-version: 22
       - name: Unit tests
         run: node --test
+      - name: Sandbox runner tests
+        run: python3 test/runner_test.py
       - name: Build check
         run: npx --yes "$WRANGLER" deploy --dry-run --outdir dist
 
