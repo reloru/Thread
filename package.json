@@ -1,0 +1,10 @@
+{
+	"name": "thread",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "npx --yes wrangler@4.147.0 dev",
+		"deploy": "npx --yes wrangler@4.147.0 deploy",
+		"test": "node --test"
+	}
+}
