@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 
 const PORT = 8080;
 const IDLE_MS = 10 * 60 * 1000;
-const RUN_TIMEOUT_MS = 90 * 1000;
+const RUN_TIMEOUT_MS = 120 * 1000;
 
 // One instance per chat (named by chat id). Runs model-written Python in an isolated
 // container with no outbound network.
@@ -30,7 +30,7 @@ export class Sandbox extends DurableObject {
 		const container = this.ctx.container;
 		if (!container.running) {
 			this.exitError = undefined;
-			container.start({ image: container.images.base, instance: "standard-1", enableInternet: false });
+			container.start({ image: container.images.base, instance: "standard-3", enableInternet: false });
 			this.ctx.waitUntil(
 				container.monitor().then(
 					() => (this.exitError = "the sandbox process exited"),

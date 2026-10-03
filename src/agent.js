@@ -11,7 +11,7 @@ export const TOOLS = {
 		function: {
 			name: "run_python",
 			description:
-				"Run Python 3.12 code in a sandbox and return stdout, stderr and errors. State (variables, imports, files in /workspace) persists between calls in this chat. numpy, pandas, matplotlib, scipy, sympy and pillow are installed. There is no internet access. Matplotlib figures are shown to the user automatically; do not call plt.savefig unless asked for a file. The value of a final bare expression is printed.",
+				"Run Python 3.12 code in a sandbox and return stdout, stderr and errors. State (variables, imports, files in /workspace) persists between calls in this chat. numpy, pandas, matplotlib, scipy, sympy and pillow are installed. There is no internet access. Each call may run for up to 60 seconds. Matplotlib figures are shown to the user automatically; do not call plt.savefig unless asked for a file. The value of a final bare expression is printed.",
 			parameters: {
 				type: "object",
 				properties: { code: { type: "string", description: "Python source to execute." } },

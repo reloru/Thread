@@ -12,7 +12,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("PORT", "8080"))
-TIMEOUT = float(os.environ.get("RUN_TIMEOUT", "30"))
+TIMEOUT = float(os.environ.get("RUN_TIMEOUT", "60"))
 MAX_CODE = 100_000
 KERNEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kernel.py")
 
