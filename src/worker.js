@@ -1,6 +1,8 @@
 import { DEFAULT_MAX_TOKENS, DEFAULT_MODEL, MODELS } from "./models.js";
 import { ParamError, sanitizeParams } from "../public/params.js";
 import { agentStream, sanitizeTools } from "./agent.js";
+import { HttpError, NO_STORE, aiOptions, json, readBytes, requireMethod } from "./http.js";
+import { speak, transcribe, turn, voiceConfig } from "./voice.js";
 
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
 const MAX_MESSAGES = 400;
@@ -17,15 +19,6 @@ export const DOCUMENT_EXTENSIONS = [
 const IMAGE_PREFIX = /^data:image\/(png|jpeg|webp|gif);base64,/;
 const IMAGE_PLACEHOLDER = "[An image was attached here, but the current model cannot view images.]";
 const IMAGE_DROPPED = "[An earlier image was omitted to stay within the per-request image limit.]";
-
-const NO_STORE = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
-
-class HttpError extends Error {
-	constructor(status, message) {
-		super(message);
-		this.status = status;
-	}
-}
 
 export default {
 	async fetch(request, env) {
@@ -59,6 +52,18 @@ async function api(request, env, url) {
 		case "/api/convert":
 			requireMethod(request, "POST");
 			return convert(request, env);
+		case "/api/voices":
+			requireMethod(request, "GET");
+			return voiceConfig();
+		case "/api/voice/transcribe":
+			requireMethod(request, "POST");
+			return transcribe(request, env);
+		case "/api/voice/turn":
+			requireMethod(request, "POST");
+			return turn(request, env);
+		case "/api/voice/speak":
+			requireMethod(request, "POST");
+			return speak(request, env);
 		default:
 			throw new HttpError(404, "Not found");
 	}
@@ -101,7 +106,7 @@ async function chat(request, env) {
 		input.max_completion_tokens = model.defaultMaxTokens ?? DEFAULT_MAX_TOKENS;
 	}
 
-	const options = env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID } } : undefined;
+	const options = aiOptions(env);
 	if (tools.length) {
 		const stream = agentStream({ env, model: model.id, input, tools, chatId: body.chatId, options });
 		return new Response(stream, {
@@ -191,30 +196,6 @@ async function readBody(request, limit) {
 	return new TextDecoder().decode(await readBytes(request, limit, "Request too large."));
 }
 
-async function readBytes(request, limit, message) {
-	if (!request.body) return new Uint8Array(0);
-	const reader = request.body.getReader();
-	const chunks = [];
-	let size = 0;
-	for (;;) {
-		const { value, done } = await reader.read();
-		if (done) break;
-		size += value.byteLength;
-		if (size > limit) {
-			await reader.cancel();
-			throw new HttpError(413, message);
-		}
-		chunks.push(value);
-	}
-	const bytes = new Uint8Array(size);
-	let offset = 0;
-	for (const c of chunks) {
-		bytes.set(c, offset);
-		offset += c.byteLength;
-	}
-	return bytes;
-}
-
 // The app percent-encodes the passcode (header values must be ISO-8859-1); raw values are accepted too.
 async function authorized(request, passcode) {
 	const header = request.headers.get("authorization") || "";
@@ -229,15 +210,4 @@ async function authorized(request, passcode) {
 	const okRaw = crypto.subtle.timingSafeEqual(a, expected);
 	const okDecoded = crypto.subtle.timingSafeEqual(b, expected);
 	return okRaw || okDecoded;
-}
-
-function requireMethod(request, method) {
-	if (request.method !== method) throw new HttpError(405, `Use ${method}.`);
-}
-
-function json(data, status = 200) {
-	return new Response(JSON.stringify(data), {
-		status,
-		headers: { "content-type": "application/json; charset=utf-8", ...NO_STORE },
-	});
 }
