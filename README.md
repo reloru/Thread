@@ -15,9 +15,13 @@ Live: https://thread.reloru.workers.dev
 | --- | --- | --- |
 | GLM-5.3 Flash (default) | yes | 0.15 / 0.50 |
 | Gemma 4 26B | yes | 0.10 / 0.30 |
+| Llama 3.3 70B (fp8-fast) | no | 0.293 / 2.253 |
 | gpt-oss-120b | no | 0.35 / 0.75 |
 | DeepSeek V4 Flash | no | 0.44 / 1.32 |
+| Qwen 3.8 27B | yes | 0.45 / 3.20 |
+| Nemotron 3 120B (A12B) | no | 0.50 / 1.50 |
 | Kimi K2.6 | yes | 0.95 / 4.00 |
+| DeepSeek V4 Pro | no | 1.32 / 3.96 |
 | GLM-5.3 | no | 1.40 / 4.40 |
 
 - Settings (gear in the model picker):

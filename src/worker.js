@@ -97,8 +97,8 @@ async function chat(request, env) {
 
 	const input = { ...params, messages, stream: true };
 	if (input.max_completion_tokens === undefined && input.max_tokens === undefined) {
-		// gpt-oss-120b truncates at 256 tokens when no cap is sent.
-		input.max_completion_tokens = DEFAULT_MAX_TOKENS;
+		// gpt-oss-120b and Llama 3.3 truncate at 256 tokens when no cap is sent.
+		input.max_completion_tokens = model.defaultMaxTokens ?? DEFAULT_MAX_TOKENS;
 	}
 
 	const options = env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID } } : undefined;

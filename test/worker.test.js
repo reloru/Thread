@@ -288,3 +288,24 @@ test("convert: rejects unsupported types and oversize files, returns markdown", 
 	assert.deepEqual(await res.json(), { name: "réport.pdf", text: "# Doc\ntext", truncated: false });
 	assert.equal(calls[0][0].name, "réport.pdf");
 });
+
+test("default output cap comes from the model entry: Llama stays inside its 24k context", async () => {
+	const { env, calls } = makeEnv();
+	const post = (model) => worker.fetch(req("/api/chat", { method: "POST", body: { model, messages: [{ role: "user", content: "x" }] } }), env);
+	await post("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
+	await post("@cf/qwen/qwen3.8-27b");
+	assert.equal(calls[0].input.max_completion_tokens, 4096);
+	assert.equal(calls[1].input.max_completion_tokens, 16384);
+});
+
+test("images reach Qwen 3.8 and become a note for Llama 3.3", async () => {
+	const { env, calls } = makeEnv();
+	const body = (model) => ({
+		model,
+		messages: [{ role: "user", content: [{ type: "text", text: "what?" }, { type: "image_url", image_url: { url: IMG } }] }],
+	});
+	await worker.fetch(req("/api/chat", { method: "POST", body: body("@cf/qwen/qwen3.8-27b") }), env);
+	await worker.fetch(req("/api/chat", { method: "POST", body: body("@cf/meta/llama-3.3-70b-instruct-fp8-fast") }), env);
+	assert.deepEqual(calls[0].input.messages[0].content[1], { type: "image_url", image_url: { url: IMG } });
+	assert.match(calls[1].input.messages[0].content, /^what\?\n\n\[An image was attached/);
+});

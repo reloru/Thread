@@ -8,6 +8,10 @@ const GLM = byId("@cf/zai-org/glm-5.3-flash");
 const GEMMA = byId("@cf/google/gemma-4-26b-a4b-it");
 const OSS = byId("@cf/openai/gpt-oss-120b");
 const KIMI = byId("@cf/moonshotai/kimi-k2.6");
+const LLAMA = byId("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
+const QWEN = byId("@cf/qwen/qwen3.8-27b");
+const NEMOTRON = byId("@cf/nvidia/nemotron-3-120b-a12b");
+const DEEPSEEK_PRO = byId("@cf/deepseek-ai/deepseek-v4-pro-0813");
 
 test("every model's controls have unique keys and valid groups", () => {
 	for (const m of MODELS) {
@@ -106,4 +110,56 @@ test("allowedKeys lists controls and extra keys", () => {
 	for (const k of ["temperature", "chat_template_kwargs", "skip_special_tokens", "tools", "n"]) assert.ok(keys.includes(k), k);
 	assert.ok(!keys.includes("enable_thinking"));
 	assert.ok(!allowedKeys(OSS).includes("chat_template_kwargs"));
+});
+
+test("Qwen 3.8 27B: effort levels, thinking toggle and the top_p floor follow the service", () => {
+	assert.deepEqual(toWire(QWEN, { values: { reasoning_effort: "xhigh", enable_thinking: false, clear_thinking: true } }), {
+		reasoning_effort: "xhigh",
+		chat_template_kwargs: { enable_thinking: false, clear_thinking: true },
+	});
+	assert.throws(() => toWire(QWEN, { values: { reasoning_effort: "none" } }), /one of xhigh, medium, low/);
+	assert.throws(() => toWire(QWEN, { values: { top_p: 0 } }), /top_p must be a number between 0.001 and 1/);
+	assert.deepEqual(toWire(QWEN, { values: { top_p: 0.001 } }), { top_p: 0.001 });
+});
+
+test("Nemotron 3 120B: reasoning modes go through chat_template_kwargs only", () => {
+	assert.deepEqual(
+		toWire(NEMOTRON, { values: { enable_thinking: true, low_effort: true, force_nonempty_content: true } }),
+		{ chat_template_kwargs: { enable_thinking: true, low_effort: true, force_nonempty_content: true } },
+	);
+	assert.throws(() => sanitizeParams({ reasoning_effort: "low" }, NEMOTRON), /reasoning_effort is not a parameter of Nemotron 3 120B/);
+	assert.throws(() => sanitizeParams({ chat_template_kwargs: { clear_thinking: true } }, NEMOTRON), /clear_thinking is not supported/);
+	assert.throws(() => toWire(NEMOTRON, { values: { top_p: 0 } }), /between 0.001 and 1/);
+});
+
+test("DeepSeek V4 Pro: effort levels include none, and top_p cannot be 0", () => {
+	assert.deepEqual(toWire(DEEPSEEK_PRO, { values: { reasoning_effort: "none", enable_thinking: false } }), {
+		reasoning_effort: "none",
+		chat_template_kwargs: { enable_thinking: false },
+	});
+	assert.throws(() => toWire(DEEPSEEK_PRO, { values: { reasoning_effort: "xhigh" } }), /one of max, high, low, none/);
+	assert.throws(() => toWire(DEEPSEEK_PRO, { values: { top_p: 0 } }), /between 0.001 and 1/);
+});
+
+test("Llama 3.3 70B follows its legacy schema and the limits the service enforces", () => {
+	assert.throws(() => sanitizeParams({ logit_bias: { 1: 1 } }, LLAMA), /logit_bias is not a parameter of Llama 3.3 70B/);
+	assert.throws(() => sanitizeParams({ chat_template_kwargs: {} }, LLAMA), /not a parameter of Llama 3.3 70B/);
+	assert.throws(() => toWire(LLAMA, { values: { response_format: "text" } }), /type must be one of json_object, json_schema/);
+	assert.throws(() => toWire(LLAMA, { values: { temperature: 2.5 } }), /between 0 and 2/);
+	assert.throws(() => toWire(LLAMA, { values: { seed: 0 } }), /between 1 and 9999999999/);
+	assert.throws(() => toWire(LLAMA, { values: { top_k: 51 } }), /between 1 and 50/);
+	assert.throws(() => toWire(LLAMA, { values: { max_completion_tokens: 24001 } }), /between 1 and 24000/);
+	assert.deepEqual(toWire(LLAMA, { values: { stop: "END", top_k: 10, repetition_penalty: 1.2, response_format: "json_object" } }), {
+		stop: ["END"],
+		top_k: 10,
+		repetition_penalty: 1.2,
+		response_format: { type: "json_object" },
+	});
+});
+
+test("only the models with a vision input accept images", () => {
+	assert.deepEqual(
+		MODELS.filter((m) => m.vision).map((m) => m.id).sort(),
+		["@cf/google/gemma-4-26b-a4b-it", "@cf/moonshotai/kimi-k2.6", "@cf/qwen/qwen3.8-27b", "@cf/zai-org/glm-5.3-flash"],
+	);
 });
