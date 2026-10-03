@@ -675,6 +675,11 @@ export function createVoice(deps) {
 		const sess = s;
 		if (!sess) return;
 		interrupt(sess);
+		// The mute button only exists in hands-free mode, so tap to talk always starts with the microphone on.
+		if (mode === "ptt" && sess.muted) {
+			sess.muted = false;
+			sess.stream?.getAudioTracks().forEach((t) => (t.enabled = true));
+		}
 		if (sess.state !== "starting") idle(sess);
 		render();
 	}
