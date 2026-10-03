@@ -75,3 +75,62 @@ test("strips NUL so placeholders cannot be forged", () => {
 	assert.ok(!html.includes("\u0000"));
 	assert.equal((html.match(/<code>/g) || []).length, 1);
 });
+
+test("deep nesting does not overflow the stack", () => {
+	assert.doesNotThrow(() => renderMarkdown("- ".repeat(20000) + "x"));
+	assert.doesNotThrow(() => renderMarkdown(">".repeat(20000) + " x"));
+});
+
+test("pathological inputs render in linear time", () => {
+	const inputs = [
+		"# a" + " ".repeat(200000) + "b",
+		"x " + "`".repeat(200000),
+		"[".repeat(200000),
+		"[x](https://a.com/" + "(".repeat(50000),
+		"https://" + "a".repeat(200000),
+		"**a ".repeat(25000),
+	];
+	for (const input of inputs) {
+		const start = performance.now();
+		renderMarkdown(input);
+		assert.ok(performance.now() - start < 1000, `${input.slice(0, 20)}… took too long`);
+	}
+});
+
+test("placeholder tokens never land inside an href", () => {
+	for (const src of ["see https://a.com`code`", "https://a.com[x](https://b.com/x)", "[x](https://a.com`y`)"]) {
+		const html = renderMarkdown(src);
+		for (const [, href] of html.matchAll(/href="([^"]*)"/g)) assert.ok(!/[<>]/.test(href), `${src} -> ${href}`);
+	}
+});
+
+test("tabs inside fenced code are kept", () => {
+	assert.match(renderMarkdown("```make\nall:\n\techo hi\n```"), /all:\n\techo hi/);
+});
+
+test("headings keep a trailing # that is part of a word", () => {
+	assert.equal(renderMarkdown("## Learn C#"), "<h2>Learn C#</h2>");
+	assert.equal(renderMarkdown("## Title ##"), "<h2>Title</h2>");
+});
+
+test("links with parentheses, bold URLs, bracketed labels", () => {
+	assert.match(renderMarkdown("[w](https://en.wikipedia.org/wiki/Foo_(bar))"), /href="https:\/\/en\.wikipedia\.org\/wiki\/Foo_\(bar\)"/);
+	assert.match(renderMarkdown("see https://e.org/Foo_(bar) now"), /href="https:\/\/e\.org\/Foo_\(bar\)"[^>]*>[^<]*<\/a> now/);
+	assert.match(renderMarkdown("(see https://e.org/x)"), /href="https:\/\/e\.org\/x"/);
+	assert.match(renderMarkdown("**https://x.com**"), /<strong><a href="https:\/\/x\.com"/);
+	assert.match(renderMarkdown("[[1]](https://x.com)"), /<a href="https:\/\/x\.com"[^>]*>\[1\]<\/a>/);
+	assert.match(renderMarkdown("[x](https://a.com/?q=1&amp;r=2)"), /href="https:\/\/a\.com\/\?q=1&amp;r=2"/);
+});
+
+test("an unpaired backtick does not merge table cells", () => {
+	assert.match(renderMarkdown("| a | b | c |\n|---|---|---|\n| x` | y | z |"), /<td>x`<\/td><td>y<\/td><td>z<\/td>/);
+});
+
+test("character references render as characters in text but not in code", () => {
+	assert.equal(renderMarkdown("a&nbsp;b &copy; & x"), "<p>a&nbsp;b &copy; &amp; x</p>");
+	assert.match(renderMarkdown("`&nbsp;`"), /<code>&amp;nbsp;<\/code>/);
+});
+
+test("code spans pair runs of equal length", () => {
+	assert.equal(renderMarkdown("use ``a ` b`` and `c`"), "<p>use <code>a ` b</code> and <code>c</code></p>");
+});

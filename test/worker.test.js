@@ -200,3 +200,49 @@ test("strips unknown message fields", () => {
 	const out = sanitizeMessages([{ role: "user", content: "x", name: "n", tool_calls: [] }], true);
 	assert.deepEqual(out, [{ role: "user", content: "x" }]);
 });
+
+test("keeps only the most recent 24 images instead of failing", () => {
+	const turns = [];
+	for (let i = 0; i < 30; i++) {
+		turns.push({ role: "user", content: [{ type: "text", text: `t${i}` }, { type: "image_url", image_url: { url: IMG } }] });
+		turns.push({ role: "assistant", content: "ok" });
+	}
+	turns.pop();
+	const out = sanitizeMessages(turns, true);
+	const parts = out.filter((m) => m.role === "user").flatMap((m) => m.content);
+	assert.equal(parts.filter((p) => p.type === "image_url").length, 24);
+	assert.equal(parts.filter((p) => /earlier image was omitted/.test(p.text || "")).length, 6);
+	assert.equal(out[0].content[1].type, "text");
+	assert.equal(out.at(-1).content[1].type, "image_url");
+});
+
+test("accepts percent-encoded and non-Latin-1 passcodes", async () => {
+	const { env } = makeEnv({ PASSCODE: "pässwörd 50%" });
+	const encoded = encodeURIComponent("pässwörd 50%");
+	assert.equal((await worker.fetch(req("/api/auth", { method: "POST", pass: encoded }), env)).status, 204);
+	assert.equal((await worker.fetch(req("/api/auth", { method: "POST", pass: "x%E0%A4%A" }), env)).status, 401);
+	const ascii = makeEnv({ PASSCODE: "4b8j-fn5s-t774" });
+	assert.equal((await worker.fetch(req("/api/auth", { method: "POST", pass: "4b8j-fn5s-t774" }), ascii.env)).status, 204);
+});
+
+test("enforces the body limit without a Content-Length header", async () => {
+	const { env, calls } = makeEnv();
+	const chunk = new Uint8Array(1024 * 1024).fill(32);
+	let sent = 0;
+	const body = new ReadableStream({
+		pull(c) {
+			if (sent++ >= 21) c.close();
+			else c.enqueue(chunk);
+		},
+	});
+	const request = new Request("https://thread.test/api/chat", {
+		method: "POST",
+		headers: { authorization: `Bearer ${PASS}` },
+		body,
+		duplex: "half",
+	});
+	assert.equal(request.headers.get("content-length"), null);
+	const res = await worker.fetch(request, env);
+	assert.equal(res.status, 413);
+	assert.equal(calls.length, 0);
+});

@@ -7,6 +7,7 @@ const MAX_IMAGES = 24;
 const MAX_INSTRUCTIONS = 20000;
 const IMAGE_PREFIX = /^data:image\/(png|jpeg|webp|gif);base64,/;
 const IMAGE_PLACEHOLDER = "[An image was attached here, but the current model cannot view images.]";
+const IMAGE_DROPPED = "[An earlier image was omitted to stay within the per-request image limit.]";
 
 const NO_STORE = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
 
@@ -57,8 +58,9 @@ async function chat(request, env) {
 
 	let body;
 	try {
-		body = await request.json();
-	} catch {
+		body = JSON.parse(await readBody(request, MAX_BODY_BYTES));
+	} catch (err) {
+		if (err instanceof HttpError) throw err;
 		throw new HttpError(400, "Body must be JSON.");
 	}
 
@@ -93,7 +95,10 @@ export function sanitizeMessages(input, vision) {
 	if (!Array.isArray(input) || input.length === 0) throw new HttpError(400, "messages must be a non-empty array.");
 	if (input.length > MAX_MESSAGES) throw new HttpError(400, "Conversation is too long.");
 
-	let images = 0;
+	// Only the most recent MAX_IMAGES images are sent; older ones become a text note.
+	let total = 0;
+	for (const m of input) if (Array.isArray(m?.content)) total += m.content.filter((p) => p?.type === "image_url").length;
+	let skip = Math.max(0, total - MAX_IMAGES);
 	const out = input.map((m) => {
 		if (!m || (m.role !== "user" && m.role !== "assistant")) throw new HttpError(400, "Invalid message role.");
 		if (typeof m.content === "string") return { role: m.role, content: m.content };
@@ -104,8 +109,12 @@ export function sanitizeMessages(input, vision) {
 			if (p?.type === "text" && typeof p.text === "string") return { type: "text", text: p.text };
 			const src = p?.type === "image_url" ? p.image_url?.url : undefined;
 			if (typeof src === "string" && IMAGE_PREFIX.test(src)) {
-				if (++images > MAX_IMAGES) throw new HttpError(400, `At most ${MAX_IMAGES} images per conversation.`);
-				return vision ? { type: "image_url", image_url: { url: src } } : { type: "text", text: IMAGE_PLACEHOLDER };
+				if (!vision) return { type: "text", text: IMAGE_PLACEHOLDER };
+				if (skip > 0) {
+					skip--;
+					return { type: "text", text: IMAGE_DROPPED };
+				}
+				return { type: "image_url", image_url: { url: src } };
 			}
 			throw new HttpError(400, "Invalid content part.");
 		});
@@ -124,15 +133,44 @@ export function sanitizeInstructions(input) {
 	return input.trim();
 }
 
+async function readBody(request, limit) {
+	if (!request.body) return "";
+	const reader = request.body.getReader();
+	const chunks = [];
+	let size = 0;
+	for (;;) {
+		const { value, done } = await reader.read();
+		if (done) break;
+		size += value.byteLength;
+		if (size > limit) {
+			await reader.cancel();
+			throw new HttpError(413, "Request too large.");
+		}
+		chunks.push(value);
+	}
+	const bytes = new Uint8Array(size);
+	let offset = 0;
+	for (const c of chunks) {
+		bytes.set(c, offset);
+		offset += c.byteLength;
+	}
+	return new TextDecoder().decode(bytes);
+}
+
+// The app percent-encodes the passcode (header values must be ISO-8859-1); raw values are accepted too.
 async function authorized(request, passcode) {
 	const header = request.headers.get("authorization") || "";
-	const provided = header.startsWith("Bearer ") ? header.slice(7) : "";
+	const raw = header.startsWith("Bearer ") ? header.slice(7) : "";
+	let decoded = raw;
+	try {
+		decoded = decodeURIComponent(raw);
+	} catch {}
 	const enc = new TextEncoder();
-	const [a, b] = await Promise.all([
-		crypto.subtle.digest("SHA-256", enc.encode(provided)),
-		crypto.subtle.digest("SHA-256", enc.encode(passcode)),
-	]);
-	return crypto.subtle.timingSafeEqual(a, b);
+	const digest = (s) => crypto.subtle.digest("SHA-256", enc.encode(s));
+	const [expected, a, b] = await Promise.all([digest(passcode), digest(raw), digest(decoded)]);
+	const okRaw = crypto.subtle.timingSafeEqual(a, expected);
+	const okDecoded = crypto.subtle.timingSafeEqual(b, expected);
+	return okRaw || okDecoded;
 }
 
 function requireMethod(request, method) {

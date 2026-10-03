@@ -74,6 +74,8 @@ const state = {
 	model: storage.get(KEY_MODEL),
 	chat: null,
 	pending: [],
+	processing: 0,
+	busy: false,
 	controller: null,
 	stick: true,
 };
@@ -112,7 +114,7 @@ function init() {
 async function api(path, options = {}) {
 	const res = await fetch(path, {
 		...options,
-		headers: { ...(options.headers || {}), authorization: `Bearer ${state.passcode || ""}` },
+		headers: { ...(options.headers || {}), authorization: bearer(state.passcode || "") },
 	});
 	if (res.status === 401) {
 		state.passcode = null;
@@ -121,6 +123,11 @@ async function api(path, options = {}) {
 		throw new AuthError("Locked");
 	}
 	return res;
+}
+
+// Header values must be ISO-8859-1, so the passcode is percent-encoded; the Worker decodes it.
+function bearer(pass) {
+	return `Bearer ${encodeURIComponent(pass)}`;
 }
 
 async function errorText(res) {
@@ -172,7 +179,7 @@ async function unlock(event) {
 	els.unlockBtn.disabled = true;
 	els.lockError.textContent = "";
 	try {
-		const res = await fetch("/api/auth", { method: "POST", headers: { authorization: `Bearer ${pass}` } });
+		const res = await fetch("/api/auth", { method: "POST", headers: { authorization: bearer(pass) } });
 		if (res.status === 401) {
 			els.lockError.textContent = "Incorrect passcode.";
 			els.passInput.select();
@@ -209,6 +216,10 @@ function newChat() {
 }
 
 async function openChat(id) {
+	if (id === state.chat?.id) {
+		closeOverlays();
+		return;
+	}
 	abortStream();
 	let chat = null;
 	try {
@@ -225,7 +236,7 @@ async function openChat(id) {
 }
 
 async function persist(chat) {
-	if (!chat.messages.length) return;
+	if (!chat.messages.length || chat.deleted) return;
 	try {
 		await db.saveChat(chat);
 	} catch {
@@ -387,6 +398,7 @@ function renderAssistant(view, msg, live) {
 
 	const notes = [];
 	if (msg.stopped) notes.push("Stopped");
+	if (msg.pending && !live) notes.push("Interrupted");
 	if (msg.truncated) notes.push("Hit length limit");
 	if (msg.toolCall) notes.push("Tool call requested (not run)");
 	view.error.hidden = !msg.error;
@@ -425,7 +437,16 @@ function toApiMessages(messages) {
 }
 
 async function send() {
-	if (state.controller) return;
+	if (state.controller || state.busy || state.processing) return;
+	state.busy = true;
+	try {
+		await sendNow();
+	} finally {
+		state.busy = false;
+	}
+}
+
+async function sendNow() {
 	const text = els.input.value.trim();
 	const images = state.pending.slice();
 	if (!text && !images.length) return;
@@ -466,7 +487,16 @@ function paramsFor(model) {
 }
 
 async function regenerate() {
-	if (state.controller) return;
+	if (state.controller || state.busy) return;
+	state.busy = true;
+	try {
+		await regenerateNow();
+	} finally {
+		state.busy = false;
+	}
+}
+
+async function regenerateNow() {
 	const chat = state.chat;
 	const lastUser = chat.messages.at(-1)?.role === "assistant" ? chat.messages.at(-2) : chat.messages.at(-1);
 	if (lastUser?.role !== "user") return;
@@ -483,7 +513,7 @@ async function regenerate() {
 async function respond(chat, params) {
 	const model = currentModel();
 	const history = toApiMessages(chat.messages);
-	const msg = { id: uid(), role: "assistant", content: "", reasoning: "", model: model.id, time: Date.now() };
+	const msg = { id: uid(), role: "assistant", content: "", reasoning: "", model: model.id, time: Date.now(), pending: true };
 	chat.messages.push(msg);
 	chat.updated = Date.now();
 	persist(chat).then(renderChatList);
@@ -499,13 +529,31 @@ async function respond(chat, params) {
 
 	let thinkStart = null;
 	let frame = 0;
+	let timer = 0;
+	let lastRender = 0;
+	let renderCost = 0;
+	let lastSave = performance.now();
+	// Long replies make each full re-render expensive; space renders out in proportion to their cost.
 	const schedule = () => {
-		if (frame) return;
-		frame = requestAnimationFrame(() => {
-			frame = 0;
-			renderAssistant(view, msg, true);
-			if (state.stick) scrollToBottom();
-		});
+		if (frame || timer) return;
+		const run = () => {
+			timer = 0;
+			frame = requestAnimationFrame(() => {
+				frame = 0;
+				const t0 = performance.now();
+				renderAssistant(view, msg, true);
+				if (state.stick) scrollToBottom();
+				lastRender = performance.now();
+				renderCost = lastRender - t0;
+				if (lastRender - lastSave > 3000) {
+					lastSave = lastRender;
+					persist(chat);
+				}
+			});
+		};
+		const wait = lastRender + renderCost * 3 - performance.now();
+		if (wait > 0) timer = setTimeout(run, wait);
+		else run();
 	};
 
 	try {
@@ -548,6 +596,8 @@ async function respond(chat, params) {
 		else msg.error = err.message || String(err);
 	} finally {
 		if (frame) cancelAnimationFrame(frame);
+		clearTimeout(timer);
+		delete msg.pending;
 		if (thinkStart !== null && !msg.thinkMs) msg.thinkMs = Math.round(performance.now() - thinkStart);
 		if (state.controller === controller) {
 			state.controller = null;
@@ -604,7 +654,8 @@ function setStreaming(on) {
 }
 
 function updateSend() {
-	els.sendBtn.disabled = !state.controller && !els.input.value.trim() && !state.pending.length;
+	els.sendBtn.disabled =
+		!state.controller && (state.processing > 0 || (!els.input.value.trim() && !state.pending.length));
 }
 
 function autosize() {
@@ -622,16 +673,19 @@ async function addFiles(files) {
 		toast(`${model.name} can't read images. Pick a model marked Vision.`);
 		return;
 	}
-	for (const file of files) {
-		if (!file.type.startsWith("image/")) continue;
-		if (state.pending.length >= MAX_ATTACH) {
-			toast(`Up to ${MAX_ATTACH} images per message`);
-			break;
-		}
+	const images = files.filter((f) => f.type.startsWith("image/"));
+	const room = MAX_ATTACH - state.pending.length - state.processing;
+	if (images.length > room) toast(`Up to ${MAX_ATTACH} images per message`);
+	const accepted = images.slice(0, Math.max(0, room));
+	state.processing += accepted.length;
+	updateSend();
+	for (const file of accepted) {
 		try {
 			state.pending.push(await downscale(file));
 		} catch {
 			toast("Couldn't read that image");
+		} finally {
+			state.processing--;
 		}
 	}
 	renderAttachments();
@@ -850,6 +904,7 @@ function bindEvents() {
 	els.input.addEventListener("keydown", (e) => {
 		if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !COARSE) {
 			e.preventDefault();
+			if (state.controller) return;
 			els.form.requestSubmit();
 		}
 	});
@@ -927,6 +982,7 @@ function bindEvents() {
 		if (!row) return;
 		if (e.target.closest(".del")) {
 			if (!confirm("Delete this chat?")) return;
+			if (state.chat.id === row.dataset.id) state.chat.deleted = true;
 			try {
 				await db.deleteChat(row.dataset.id);
 			} catch {}
