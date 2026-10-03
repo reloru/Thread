@@ -67,13 +67,13 @@ export async function getChat(id) {
 		request(tx.objectStore("meta").get(id)),
 		request(tx.objectStore("chats").get(id)),
 	]);
-	return meta && body ? { ...meta, messages: body.messages, instructions: body.instructions } : null;
+	return meta && body ? { ...meta, messages: body.messages, instructions: body.instructions, tools: body.tools || [] } : null;
 }
 
 export async function saveChat(chat) {
 	const tx = await transaction(["meta", "chats"], "readwrite");
 	tx.objectStore("meta").put({ id: chat.id, title: chat.title, created: chat.created, updated: chat.updated });
-	tx.objectStore("chats").put({ id: chat.id, messages: chat.messages, instructions: chat.instructions });
+	tx.objectStore("chats").put({ id: chat.id, messages: chat.messages, instructions: chat.instructions, tools: chat.tools });
 	await done(tx);
 }
 

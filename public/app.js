@@ -13,6 +13,7 @@ const els = {
 	attachBtn: $("attachBtn"),
 	file: $("file"),
 	attachments: $("attachments"),
+	toolChips: $("toolChips"),
 	notice: $("notice"),
 	toBottom: $("toBottom"),
 	menuBtn: $("menuBtn"),
@@ -46,6 +47,7 @@ const els = {
 const KEY_PASS = "thread.passcode";
 const KEY_MODEL = "thread.model";
 const MAX_ATTACH = 4;
+const MAX_DOCS = 5;
 const MAX_IMAGE_EDGE = 1536;
 // Must stay within the Worker's 24-image cap and 20 MB body limit.
 const MAX_SEND_IMAGES = 24;
@@ -81,6 +83,7 @@ const state = {
 	model: storage.get(KEY_MODEL),
 	chat: null,
 	pending: [],
+	docs: [],
 	processing: 0,
 	busy: false,
 	controller: null,
@@ -220,8 +223,9 @@ function uid() {
 function newChat() {
 	abortStream();
 	const now = Date.now();
-	state.chat = { id: uid(), title: "New chat", created: now, updated: now, messages: [] };
+	state.chat = { id: uid(), title: "New chat", created: now, updated: now, messages: [], tools: [] };
 	renderConversation();
+	renderToolChips();
 }
 
 async function openChat(id) {
@@ -241,7 +245,25 @@ async function openChat(id) {
 	}
 	state.chat = chat;
 	renderConversation();
+	renderToolChips();
 	closeOverlays();
+}
+
+function renderToolChips() {
+	const on = state.chat?.tools || [];
+	for (const chip of els.toolChips.querySelectorAll(".chip")) {
+		chip.setAttribute("aria-pressed", String(on.includes(chip.dataset.tool)));
+	}
+}
+
+function toggleTool(tool) {
+	const chat = state.chat;
+	const on = new Set(chat.tools || []);
+	if (on.has(tool)) on.delete(tool);
+	else on.add(tool);
+	chat.tools = [...on];
+	renderToolChips();
+	persist(chat);
 }
 
 async function persist(chat) {
@@ -344,6 +366,15 @@ function appendMessage(msg, live) {
 			}
 			node.append(imgs);
 		}
+		if (msg.files?.length) {
+			const files = el("div", "user-files");
+			for (const f of msg.files) {
+				const chip = el("div", "file-chip");
+				chip.append(icon("i-file"), el("span", "", f.name));
+				files.append(chip);
+			}
+			node.append(files);
+		}
 		if (msg.content) node.append(el("div", "bubble", msg.content));
 		view = { node };
 	} else {
@@ -355,6 +386,7 @@ function appendMessage(msg, live) {
 		const thinkBody = el("div", "thinking-body md");
 		thinking.append(summary, thinkBody);
 		thinking.hidden = true;
+		const toolsBox = el("div", "tool-runs");
 		const answer = el("div", "md answer");
 		const error = el("div", "error-box");
 		error.hidden = true;
@@ -365,8 +397,8 @@ function appendMessage(msg, live) {
 		regen.classList.add("regen");
 		const meta = el("span", "meta");
 		actions.append(copy, regen, meta);
-		node.append(thinking, answer, error, actions);
-		view = { node, thinking, thinkLabel, thinkBody, answer, error, actions, meta, msg };
+		node.append(thinking, toolsBox, answer, error, actions);
+		view = { node, thinking, thinkLabel, thinkBody, toolsBox, answer, error, actions, meta, msg, toolsVersion: -1 };
 		thinking.addEventListener("toggle", () => {
 			if (thinking.open) thinkBody.innerHTML = renderMarkdown(view.msg.reasoning || "");
 		});
@@ -395,7 +427,14 @@ function renderAssistant(view, msg, live) {
 			: "Thoughts";
 	if (hasReasoning && view.thinking.open) view.thinkBody.innerHTML = renderMarkdown(msg.reasoning);
 
-	if (live && !msg.content && !hasReasoning) {
+	const tools = msg.tools || [];
+	if (view.toolsVersion !== (msg.toolsVersion || 0)) {
+		view.toolsVersion = msg.toolsVersion || 0;
+		renderToolRuns(view.toolsBox, tools);
+	}
+	view.toolsBox.hidden = !tools.length;
+
+	if (live && !msg.content && !hasReasoning && !tools.length) {
 		if (!view.answer.querySelector(".dots")) {
 			view.answer.replaceChildren(el("div", "dots"));
 			view.answer.firstChild.append(el("i"), el("i"), el("i"));
@@ -415,6 +454,75 @@ function renderAssistant(view, msg, live) {
 	view.actions.hidden = live;
 	view.actions.querySelector(".copy").hidden = !msg.content;
 	view.meta.textContent = [modelLabel(msg.model), ...notes].filter(Boolean).join(" · ");
+}
+
+function renderToolRuns(box, tools) {
+	box.replaceChildren(
+		...tools.map((t) => {
+			const run = el("div", "tool-run");
+			const r = t.result || {};
+			if (t.name === "fetch_url") {
+				const line = el("div", "tool-line");
+				line.append(icon("i-globe"));
+				let host = t.args?.url || "";
+				try {
+					host = new URL(host).host;
+				} catch {}
+				line.append(el("span", "", t.running ? "Reading " : r.error ? "Couldn't read " : "Read "));
+				if (/^https?:\/\//.test(t.args?.url || "")) {
+					const a = el("a", "", host);
+					a.href = t.args.url;
+					a.target = "_blank";
+					a.rel = "noopener noreferrer";
+					line.append(a);
+				} else line.append(el("span", "", host || "a page"));
+				if (t.running) line.append(el("span", "tool-spin"));
+				run.append(line);
+				if (r.error) run.append(el("div", "error-box", r.error));
+				return run;
+			}
+			const details = el("details", "tool-details");
+			const summary = el("summary");
+			summary.append(icon("i-code"), el("span", "", t.running ? "Running Python" : r.error ? "Ran Python · error" : "Ran Python"));
+			if (t.running) summary.append(el("span", "tool-spin"));
+			summary.append(icon("i-chev"));
+			const body = el("div", "tool-body");
+			const code = el("div", "md");
+			code.innerHTML = renderMarkdown("```python\n" + String(t.args?.code ?? t.args?.raw ?? "") + "\n```");
+			body.append(code);
+			const out = [r.stdout, r.stderr].filter(Boolean).join("\n");
+			if (out) body.append(el("pre", "tool-out", out));
+			if (r.error) body.append(el("div", "error-box", r.error));
+			details.append(summary, body);
+			run.append(details);
+			if (r.images?.length) {
+				const imgs = el("div", "tool-images");
+				for (const b64 of r.images) {
+					const img = el("img");
+					img.src = `data:image/png;base64,${b64}`;
+					img.alt = "Figure from Python";
+					imgs.append(img);
+				}
+				run.append(imgs);
+			}
+			return run;
+		}),
+	);
+}
+
+function handleToolEvent(msg, ev) {
+	msg.tools ??= [];
+	if (ev.type === "tool_start") {
+		msg.tools.push({ id: ev.id, name: ev.name, args: ev.args || {}, running: true });
+		if (msg.content && !msg.content.endsWith("\n\n")) msg.content += "\n\n";
+	} else if (ev.type === "tool_result") {
+		const t = msg.tools.find((x) => x.id === ev.id && x.running);
+		if (t) {
+			t.running = false;
+			t.result = ev.result || {};
+		}
+	}
+	msg.toolsVersion = (msg.toolsVersion || 0) + 1;
 }
 
 function updateRegen() {
@@ -452,18 +560,20 @@ function toApiMessages(messages, vision) {
 	const out = [];
 	messages.forEach((m, i) => {
 		if (m.role === "assistant") {
-			if (m.content) out.push({ role: "assistant", content: m.content });
+			const content = [toolSummary(m.tools), m.content].filter(Boolean).join("\n\n");
+			if (content) out.push({ role: "assistant", content });
 			return;
 		}
+		const text = [fileText(m.files), m.content].filter(Boolean).join("\n\n");
 		if (!m.images?.length) {
-			out.push({ role: "user", content: m.content });
+			out.push({ role: "user", content: text });
 			return;
 		}
 		const flags = kept.get(i);
 		out.push({
 			role: "user",
 			content: [
-				...(m.content ? [{ type: "text", text: m.content }] : []),
+				...(text ? [{ type: "text", text }] : []),
 				...m.images.map((url, k) =>
 					flags[k]
 						? { type: "image_url", image_url: { url } }
@@ -473,6 +583,25 @@ function toApiMessages(messages, vision) {
 		});
 	});
 	return out;
+}
+
+function fileText(files) {
+	if (!files?.length) return "";
+	return files.map((f) => `[File: ${f.name}${f.truncated ? " (truncated)" : ""}]\n${f.text}`).join("\n\n");
+}
+
+// Earlier tool use is replayed as text so stored chats stay valid for any model.
+function toolSummary(tools) {
+	if (!tools?.length) return "";
+	return tools
+		.map((t) => {
+			const r = t.result || {};
+			if (t.name === "fetch_url") return `(Earlier tool use: read ${t.args?.url || "a page"}${r.error ? `, which failed: ${r.error}` : ""}.)`;
+			const output = [r.stdout, r.stderr, r.error].filter(Boolean).join("\n").slice(0, 2000) || "(no output)";
+			const figs = r.images?.length ? `\n(${r.images.length} figure(s) were shown to the user.)` : "";
+			return `(Earlier tool use: ran Python.)\n\`\`\`python\n${t.args?.code ?? ""}\n\`\`\`\nOutput:\n${output}${figs}`;
+		})
+		.join("\n\n");
 }
 
 async function send() {
@@ -487,13 +616,14 @@ async function send() {
 
 async function sendNow() {
 	if (!state.models.length) {
-		if (!els.input.value.trim() && !state.pending.length) return;
+		if (!els.input.value.trim() && !state.pending.length && !state.docs.length) return;
 		await loadModels().catch(() => {});
 		if (!state.models.length || state.processing) return;
 	}
 	const text = els.input.value.trim();
 	const images = state.pending.slice();
-	if (!text && !images.length) return;
+	const docs = state.docs.slice();
+	if (!text && !images.length && !docs.length) return;
 	const model = currentModel();
 	if (images.length && !model.vision) {
 		toast(`${model.name} can't read images. Pick a model marked Vision.`);
@@ -505,12 +635,14 @@ async function sendNow() {
 	const chat = state.chat;
 	const userMsg = { id: uid(), role: "user", content: text, time: Date.now() };
 	if (images.length) userMsg.images = images;
+	if (docs.length) userMsg.files = docs;
 	chat.messages.push(userMsg);
-	if (chat.messages.length === 1) chat.title = makeTitle(text || "Image");
+	if (chat.messages.length === 1) chat.title = makeTitle(text || docs[0]?.name || "Image");
 
 	els.input.value = "";
 	autosize();
 	state.pending = [];
+	state.docs = [];
 	renderAttachments();
 	appendMessage(userMsg, false);
 	updateEmpty();
@@ -613,12 +745,19 @@ async function respond(chat, params) {
 				messages: history,
 				params,
 				instructions: settings.instructionsFor(chat),
+				tools: chat.tools?.length ? chat.tools : undefined,
+				chatId: chat.id,
 			}),
 			signal: controller.signal,
 		});
 		if (!res.ok) throw new Error(await errorText(res));
 		let finished = false;
 		const sawDone = await readSSE(res.body, (evt) => {
+			if (evt.thread) {
+				handleToolEvent(msg, evt.thread);
+				schedule();
+				return;
+			}
 			if (evt.error || evt.errors?.length) {
 				const e = evt.error ?? evt.errors[0];
 				throw new Error(typeof e === "string" ? e : e.message || "Model error");
@@ -649,6 +788,13 @@ async function respond(chat, params) {
 		if (frame) cancelAnimationFrame(frame);
 		clearTimeout(timer);
 		delete msg.pending;
+		for (const t of msg.tools || []) {
+			if (t.running) {
+				t.running = false;
+				t.result = { error: "Stopped before the tool finished." };
+				msg.toolsVersion = (msg.toolsVersion || 0) + 1;
+			}
+		}
 		if (thinkStart !== null && !msg.thinkMs) msg.thinkMs = Math.round(performance.now() - thinkStart);
 		if (state.controller === controller) {
 			state.controller = null;
@@ -708,7 +854,7 @@ function setStreaming(on) {
 
 function updateSend() {
 	els.sendBtn.disabled =
-		!state.controller && (state.processing > 0 || (!els.input.value.trim() && !state.pending.length));
+		!state.controller && (state.processing > 0 || (!els.input.value.trim() && !state.pending.length && !state.docs.length));
 }
 
 function autosize() {
@@ -722,11 +868,14 @@ function autosize() {
 
 async function addFiles(files) {
 	const model = currentModel();
+	const docs = files.filter((f) => !f.type.startsWith("image/"));
+	if (docs.length) addDocs(docs);
+	const images = files.filter((f) => f.type.startsWith("image/"));
+	if (!images.length) return;
 	if (model && !model.vision) {
 		toast(`${model.name} can't read images. Pick a model marked Vision.`);
 		return;
 	}
-	const images = files.filter((f) => f.type.startsWith("image/"));
 	const room = MAX_ATTACH - state.pending.length - state.processing;
 	if (images.length > room) toast(`Up to ${MAX_ATTACH} images per message`);
 	const accepted = images.slice(0, Math.max(0, room));
@@ -742,6 +891,32 @@ async function addFiles(files) {
 		}
 	}
 	renderAttachments();
+}
+
+async function addDocs(files) {
+	const room = MAX_DOCS - state.docs.length;
+	if (files.length > room) toast(`Up to ${MAX_DOCS} files per message`);
+	const accepted = files.slice(0, Math.max(0, room));
+	state.processing += accepted.length;
+	renderAttachments();
+	for (const file of accepted) {
+		try {
+			const res = await api("/api/convert", {
+				method: "POST",
+				headers: { "x-filename": encodeURIComponent(file.name) },
+				body: file,
+			});
+			if (!res.ok) throw new Error(await errorText(res));
+			const doc = await res.json();
+			state.docs.push(doc);
+			if (doc.truncated) toast(`${doc.name} was long; only the first part is included.`);
+		} catch (err) {
+			if (!(err instanceof AuthError)) toast(err.message || `Couldn't read ${file.name}`);
+		} finally {
+			state.processing--;
+			renderAttachments();
+		}
+	}
 }
 
 async function downscale(file) {
@@ -770,7 +945,23 @@ async function downscale(file) {
 }
 
 function renderAttachments() {
+	const docChips = state.docs.map((doc, index) => {
+		const chip = el("div", "file-chip removable");
+		chip.append(icon("i-file"), el("span", "", doc.name));
+		const remove = el("button");
+		remove.type = "button";
+		remove.setAttribute("aria-label", `Remove ${doc.name}`);
+		remove.append(icon("i-x"));
+		remove.addEventListener("click", () => {
+			state.docs.splice(index, 1);
+			renderAttachments();
+		});
+		chip.append(remove);
+		return chip;
+	});
+	if (state.processing) docChips.push(el("div", "file-chip pending", "Reading…"));
 	els.attachments.replaceChildren(
+		...docChips,
 		...state.pending.map((src, index) => {
 			const wrap = el("div", "thumb");
 			const img = el("img");
@@ -795,7 +986,6 @@ function renderAttachments() {
 function updateComposerCaps() {
 	const model = currentModel();
 	const vision = Boolean(model?.vision);
-	els.attachBtn.classList.toggle("dim", Boolean(model) && !vision);
 	const blocked = state.pending.length > 0 && model && !vision;
 	els.notice.hidden = !blocked;
 	if (blocked) els.notice.textContent = `${model.name} can't read images. Remove them or switch models.`;
@@ -980,13 +1170,10 @@ function bindEvents() {
 		}
 	});
 
-	els.attachBtn.addEventListener("click", () => {
-		const model = currentModel();
-		if (model && !model.vision) {
-			toast(`${model.name} can't read images. Pick a model marked Vision.`);
-			return;
-		}
-		els.file.click();
+	els.attachBtn.addEventListener("click", () => els.file.click());
+	els.toolChips.addEventListener("click", (e) => {
+		const chip = e.target.closest(".chip");
+		if (chip) toggleTool(chip.dataset.tool);
 	});
 	els.file.addEventListener("change", () => {
 		const files = [...els.file.files];

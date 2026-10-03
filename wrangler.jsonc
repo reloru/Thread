@@ -1,22 +1,91 @@
 {
 	"$schema": "https://unpkg.com/wrangler@4.147.0/config-schema.json",
 	"name": "thread",
-	"main": "src/worker.js",
+	"main": "src/index.js",
 	"compatibility_date": "2026-10-01",
 	"workers_dev": true,
 	"preview_urls": false,
 	"ai": {
 		"binding": "AI"
 	},
+	"browser": {
+		"binding": "BROWSER",
+		"remote": true
+	},
 	"assets": {
 		"directory": "public",
 		"binding": "ASSETS",
 		"run_worker_first": ["/api/*"]
+	},
+	"containers": [
+		{
+			"class_name": "Sandbox",
+			"scheduling_policy": "durable_object",
+			"images": {
+				"base": {
+					"dockerfile": "./container/Dockerfile"
+				}
+			}
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "SANDBOX",
+				"class_name": "Sandbox"
+			}
+		]
+	},
+	"exports": {
+		"Sandbox": {
+			"type": "durable-object",
+			"storage": "sqlite"
+		}
 	},
 	"vars": {
 		"AI_GATEWAY_ID": ""
 	},
 	"observability": {
 		"enabled": true
+	},
+	"env": {
+		"staging": {
+			"name": "thread-staging",
+			"ai": {
+				"binding": "AI"
+			},
+			"browser": {
+				"binding": "BROWSER",
+				"remote": true
+			},
+			"containers": [
+				{
+					"class_name": "Sandbox",
+					"scheduling_policy": "durable_object",
+					"observability": {
+						"enabled": true
+					},
+					"images": {
+						"base": {
+							"dockerfile": "./container/Dockerfile"
+						}
+					}
+				}
+			],
+			"durable_objects": {
+				"bindings": [
+					{
+						"name": "SANDBOX",
+						"class_name": "Sandbox"
+					}
+				]
+			},
+			"vars": {
+				"AI_GATEWAY_ID": ""
+			},
+			"observability": {
+				"enabled": true
+			}
+		}
 	}
 }

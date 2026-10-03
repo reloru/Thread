@@ -1,10 +1,19 @@
 import { DEFAULT_MAX_TOKENS, DEFAULT_MODEL, MODELS } from "./models.js";
 import { ParamError, sanitizeParams } from "../public/params.js";
+import { agentStream, sanitizeTools } from "./agent.js";
 
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
 const MAX_MESSAGES = 400;
 const MAX_IMAGES = 24;
 const MAX_INSTRUCTIONS = 20000;
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_FILE_TEXT = 100000;
+const CHAT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// Document formats from env.AI.toMarkdown().supported(); images use the vision path instead.
+export const DOCUMENT_EXTENSIONS = [
+	".csv", ".docx", ".et", ".htm", ".html", ".numbers", ".odp", ".ods", ".odt", ".otp", ".pdf",
+	".potx", ".ppsm", ".ppsx", ".pptm", ".pptx", ".xls", ".xlsb", ".xlsm", ".xlsx", ".xml",
+];
 const IMAGE_PREFIX = /^data:image\/(png|jpeg|webp|gif);base64,/;
 const IMAGE_PLACEHOLDER = "[An image was attached here, but the current model cannot view images.]";
 const IMAGE_DROPPED = "[An earlier image was omitted to stay within the per-request image limit.]";
@@ -47,6 +56,9 @@ async function api(request, env, url) {
 		case "/api/chat":
 			requireMethod(request, "POST");
 			return chat(request, env);
+		case "/api/convert":
+			requireMethod(request, "POST");
+			return convert(request, env);
 		default:
 			throw new HttpError(404, "Not found");
 	}
@@ -70,6 +82,18 @@ async function chat(request, env) {
 	const params = sanitizeParams(body.params, model);
 	const instructions = sanitizeInstructions(body.instructions);
 	if (instructions) messages.unshift({ role: "system", content: instructions });
+	let tools;
+	try {
+		tools = sanitizeTools(body.tools);
+	} catch (err) {
+		throw new HttpError(400, err.message);
+	}
+	if (tools.length && (params.tools || params.functions)) {
+		throw new HttpError(400, "Turn off the Code and Web tools to send your own tools in Advanced JSON.");
+	}
+	if (tools.includes("python") && !(typeof body.chatId === "string" && CHAT_ID.test(body.chatId))) {
+		throw new HttpError(400, "chatId must be a UUID when the Code tool is on.");
+	}
 
 	const input = { ...params, messages, stream: true };
 	if (input.max_completion_tokens === undefined && input.max_tokens === undefined) {
@@ -78,6 +102,12 @@ async function chat(request, env) {
 	}
 
 	const options = env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID } } : undefined;
+	if (tools.length) {
+		const stream = agentStream({ env, model: model.id, input, tools, chatId: body.chatId, options });
+		return new Response(stream, {
+			headers: { "content-type": "text/event-stream; charset=utf-8", ...NO_STORE },
+		});
+	}
 	let stream;
 	try {
 		stream = await env.AI.run(model.id, input, options);
@@ -89,6 +119,30 @@ async function chat(request, env) {
 	return new Response(stream, {
 		headers: { "content-type": "text/event-stream; charset=utf-8", ...NO_STORE },
 	});
+}
+
+async function convert(request, env) {
+	const name = decodeURIComponent(request.headers.get("x-filename") || "").trim();
+	const ext = name.toLowerCase().match(/\.[a-z0-9]+$/)?.[0];
+	if (!name || name.length > 255 || !DOCUMENT_EXTENSIONS.includes(ext)) {
+		throw new HttpError(415, `Unsupported file type. Supported: ${DOCUMENT_EXTENSIONS.join(" ")}`);
+	}
+	const length = Number(request.headers.get("content-length") || 0);
+	if (length > MAX_FILE_BYTES) throw new HttpError(413, "Files are limited to 10 MB.");
+	const bytes = await readBytes(request, MAX_FILE_BYTES, "Files are limited to 10 MB.");
+	if (!bytes.byteLength) throw new HttpError(400, "The file is empty.");
+
+	let result;
+	try {
+		[result] = await env.AI.toMarkdown([{ name, blob: new Blob([bytes], { type: "application/octet-stream" }) }]);
+	} catch (err) {
+		throw new HttpError(502, `Conversion failed: ${err?.message || String(err)}`);
+	}
+	if (!result || result.format === "error" || typeof result.data !== "string") {
+		throw new HttpError(422, `Could not read ${name}${result?.error ? `: ${result.error}` : "."}`);
+	}
+	const truncated = result.data.length > MAX_FILE_TEXT;
+	return json({ name, text: truncated ? result.data.slice(0, MAX_FILE_TEXT) : result.data, truncated });
 }
 
 export function sanitizeMessages(input, vision) {
@@ -134,7 +188,11 @@ export function sanitizeInstructions(input) {
 }
 
 async function readBody(request, limit) {
-	if (!request.body) return "";
+	return new TextDecoder().decode(await readBytes(request, limit, "Request too large."));
+}
+
+async function readBytes(request, limit, message) {
+	if (!request.body) return new Uint8Array(0);
 	const reader = request.body.getReader();
 	const chunks = [];
 	let size = 0;
@@ -144,7 +202,7 @@ async function readBody(request, limit) {
 		size += value.byteLength;
 		if (size > limit) {
 			await reader.cancel();
-			throw new HttpError(413, "Request too large.");
+			throw new HttpError(413, message);
 		}
 		chunks.push(value);
 	}
@@ -154,7 +212,7 @@ async function readBody(request, limit) {
 		bytes.set(c, offset);
 		offset += c.byteLength;
 	}
-	return new TextDecoder().decode(bytes);
+	return bytes;
 }
 
 // The app percent-encodes the passcode (header values must be ISO-8859-1); raw values are accepted too.

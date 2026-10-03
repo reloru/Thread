@@ -246,3 +246,45 @@ test("enforces the body limit without a Content-Length header", async () => {
 	assert.equal(res.status, 413);
 	assert.equal(calls.length, 0);
 });
+
+test("tools: validated, need a chat id for python, and exclude Advanced JSON tools", async () => {
+	const { env } = makeEnv();
+	const post = (extra) =>
+		worker.fetch(req("/api/chat", { method: "POST", body: { model: VISION, messages: [{ role: "user", content: "x" }], ...extra } }), env);
+	assert.equal((await post({ tools: ["shell"] })).status, 400);
+	assert.equal((await post({ tools: ["python"] })).status, 400);
+	assert.equal((await post({ tools: ["python"], chatId: "../x" })).status, 400);
+	assert.equal((await post({ tools: ["web"], params: { tools: [] } })).status, 400);
+	const ok = await post({ tools: ["web"] });
+	assert.equal(ok.status, 200);
+	assert.match(ok.headers.get("content-type"), /event-stream/);
+});
+
+test("convert: rejects unsupported types and oversize files, returns markdown", async () => {
+	const calls = [];
+	const { env } = makeEnv({
+		AI: {
+			run: async () => new ReadableStream(),
+			toMarkdown: async (files) => {
+				calls.push(files);
+				return [{ name: files[0].name, format: "markdown", data: "# Doc\ntext" }];
+			},
+		},
+	});
+	const up = (name, bytes) =>
+		worker.fetch(
+			new Request("https://thread.test/api/convert", {
+				method: "POST",
+				headers: { authorization: `Bearer ${PASS}`, "x-filename": encodeURIComponent(name) },
+				body: bytes,
+			}),
+			env,
+		);
+	assert.equal((await up("a.exe", new Uint8Array(4))).status, 415);
+	assert.equal((await up("a.pdf", new Uint8Array(0))).status, 400);
+	assert.equal((await up("big.pdf", new Uint8Array(10 * 1024 * 1024 + 1))).status, 413);
+	const res = await up("réport.pdf", new Uint8Array([37, 80, 68, 70]));
+	assert.equal(res.status, 200);
+	assert.deepEqual(await res.json(), { name: "réport.pdf", text: "# Doc\ntext", truncated: false });
+	assert.equal(calls[0][0].name, "réport.pdf");
+});
