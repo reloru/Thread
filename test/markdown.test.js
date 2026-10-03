@@ -89,6 +89,10 @@ test("pathological inputs render in linear time", () => {
 		"[x](https://a.com/" + "(".repeat(50000),
 		"https://" + "a".repeat(200000),
 		"**a ".repeat(25000),
+		"~".repeat(200000) + "`",
+		"```" + "a".repeat(200000) + "`",
+		"a|b\n|---" + " ".repeat(200000) + "x",
+		"- " + "~".repeat(20000) + "`",
 	];
 	for (const input of inputs) {
 		const start = performance.now();
@@ -133,4 +137,21 @@ test("character references render as characters in text but not in code", () => 
 
 test("code spans pair runs of equal length", () => {
 	assert.equal(renderMarkdown("use ``a ` b`` and `c`"), "<p>use <code>a ` b</code> and <code>c</code></p>");
+});
+
+test("tabs survive in fences nested in lists and quotes", () => {
+	for (const src of [
+		"- step\n\n    ```make\n    all:\n    \techo hi\n    ```",
+		"- ```make\n  all:\n  \techo hi\n  ```",
+		"> ```make\n> all:\n> \techo hi\n> ```",
+	]) {
+		assert.match(renderMarkdown(src), /all:\n\techo hi/, src);
+	}
+	assert.equal(renderMarkdown("-\titem one\n-\titem two"), "<ul><li>item one</li><li>item two</li></ul>");
+});
+
+test("&amp; in bare and angle-bracket autolinks is decoded once", () => {
+	const html = renderMarkdown("https://a.com/?q=1&amp;r=2 and <https://b.com/?x=1&amp;y=2>");
+	assert.match(html, /href="https:\/\/a\.com\/\?q=1&amp;r=2"/);
+	assert.match(html, /href="https:\/\/b\.com\/\?x=1&amp;y=2"/);
 });

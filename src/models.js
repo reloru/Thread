@@ -58,8 +58,7 @@ const maxTokens = (context) => ({
 	min: 1,
 	max: context,
 	default: DEFAULT_MAX_TOKENS,
-	defaultLabel: `App default · ${DEFAULT_MAX_TOKENS}`,
-	help: "An upper bound for the number of tokens that can be generated, reasoning included.",
+	help: "An upper bound for the number of tokens that can be generated, reasoning included. When unset, the app sends 16384.",
 });
 const seed = (extra = {}) => ({
 	key: "seed",

@@ -15,58 +15,68 @@ const escapeText = (s) =>
 const MAX_DEPTH = 16;
 const MAX_FORMAT_LENGTH = 20000;
 
-const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)[^`]*$/;
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
 const HEADING_START = /^ {0,3}(#{1,6})(?=[ \t]|$)/;
 const HR = /^ {0,3}([-*_])(\s*\1){2,}\s*$/;
 const QUOTE = /^ {0,3}>\s?(.*)$/;
 const LIST_ITEM = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
-const TABLE_SEP = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
 export function renderMarkdown(src) {
-	const raw = String(src ?? "").replace(/\0/g, "").replace(/\r\n?/g, "\n").split("\n");
-	// Expand tabs for block structure, but keep them verbatim inside fenced code.
-	let fence = null;
-	const lines = raw.map((line) => {
-		if (fence) {
-			if (isClosingFence(line, fence)) fence = null;
-			return line;
-		}
-		const expanded = line.replace(/\t/g, "    ");
-		const m = expanded.match(FENCE);
-		if (m) fence = m[1];
-		return expanded;
-	});
+	const lines = String(src ?? "").replace(/\0/g, "").replace(/\r\n?/g, "\n").split("\n");
 	return renderBlocks(lines, 0);
+}
+
+// Block structure is measured on a tab-expanded copy; source lines stay raw so that tabs
+// inside code blocks survive. Container indentation is stripped by columns.
+const expandTabs = (line) => line.replace(/\t/g, "    ");
+
+function stripColumns(line, n) {
+	let col = 0;
+	let k = 0;
+	while (k < line.length && col < n) {
+		const w = line[k] === "\t" ? 4 : line[k] === " " ? 1 : 0;
+		if (!w) break;
+		if (col + w > n) return " ".repeat(col + w - n) + line.slice(k + 1);
+		col += w;
+		k++;
+	}
+	return line.slice(k);
+}
+
+function parseFence(line) {
+	const m = FENCE_OPEN.exec(line);
+	if (!m) return null;
+	const rest = line.slice(m[0].length);
+	if (rest.includes("`")) return null;
+	return { marker: m[1], lang: rest.trimStart().split(/\s/)[0] };
 }
 
 function renderBlocks(lines, depth) {
 	if (depth > MAX_DEPTH) {
-		const text = lines.filter((l) => l.trim()).map((l) => inline(l.trim()));
+		const text = lines.filter((l) => l.trim()).map((l) => inline(expandTabs(l).trim()));
 		return text.length ? `<p>${text.join("<br>")}</p>` : "";
 	}
 	const out = [];
 	let i = 0;
 	while (i < lines.length) {
-		const line = lines[i];
+		const line = expandTabs(lines[i]);
 
 		if (!line.trim()) {
 			i++;
 			continue;
 		}
 
-		const fence = line.match(FENCE);
+		const fence = parseFence(line);
 		if (fence) {
-			const marker = fence[1];
-			const lang = fence[2];
 			const indent = line.match(/^ */)[0].length;
 			const body = [];
 			i++;
-			while (i < lines.length && !isClosingFence(lines[i], marker)) {
-				body.push(lines[i].replace(new RegExp(`^ {0,${indent}}`), ""));
+			while (i < lines.length && !isClosingFence(expandTabs(lines[i]), fence.marker)) {
+				body.push(stripColumns(lines[i], indent));
 				i++;
 			}
 			i++;
-			out.push(codeBlock(body.join("\n"), lang));
+			out.push(codeBlock(body.join("\n"), fence.lang));
 			continue;
 		}
 
@@ -85,8 +95,8 @@ function renderBlocks(lines, depth) {
 
 		if (QUOTE.test(line)) {
 			const body = [];
-			while (i < lines.length && lines[i].trim() && QUOTE.test(lines[i])) {
-				body.push(lines[i].match(QUOTE)[1]);
+			while (i < lines.length && lines[i].trim() && QUOTE.test(expandTabs(lines[i]))) {
+				body.push(stripColumns(lines[i].replace(/^ {0,3}>/, ""), 1));
 				i++;
 			}
 			out.push(`<blockquote>${renderBlocks(body, depth + 1)}</blockquote>`);
@@ -109,11 +119,11 @@ function renderBlocks(lines, depth) {
 
 		const para = [];
 		while (i < lines.length && lines[i].trim() && !startsBlock(lines, i)) {
-			para.push(lines[i].trim());
+			para.push(expandTabs(lines[i]).trim());
 			i++;
 		}
 		if (para.length === 0) {
-			para.push(lines[i].trim());
+			para.push(line.trim());
 			i++;
 		}
 		out.push(`<p>${para.map(inline).join("<br>")}</p>`);
@@ -137,9 +147,9 @@ function isClosingFence(line, marker) {
 }
 
 function startsBlock(lines, i) {
-	const line = lines[i];
+	const line = expandTabs(lines[i]);
 	return (
-		FENCE.test(line) ||
+		parseFence(line) !== null ||
 		HEADING_START.test(line) ||
 		HR.test(line) ||
 		QUOTE.test(line) ||
@@ -150,7 +160,14 @@ function startsBlock(lines, i) {
 
 function isTableStart(lines, i) {
 	const sep = lines[i + 1];
-	return lines[i].includes("|") && sep !== undefined && sep.includes("|") && sep.includes("-") && TABLE_SEP.test(sep);
+	return lines[i].includes("|") && sep !== undefined && sep.includes("|") && sep.includes("-") && isTableSep(sep);
+}
+
+function isTableSep(sep) {
+	let t = sep.trim();
+	if (t.startsWith("|")) t = t.slice(1);
+	if (t.endsWith("|")) t = t.slice(0, -1);
+	return t.split("|").every((c) => /^:?-+:?$/.test(c.trim()));
 }
 
 function codeBlock(code, lang) {
@@ -163,7 +180,7 @@ function codeBlock(code, lang) {
 }
 
 function parseList(lines, start, depth) {
-	const first = lines[start].match(LIST_ITEM);
+	const first = expandTabs(lines[start]).match(LIST_ITEM);
 	const baseIndent = first[1].length;
 	const ordered = /\d/.test(first[2]);
 	const startNum = ordered ? parseInt(first[2], 10) : 1;
@@ -172,7 +189,7 @@ function parseList(lines, start, depth) {
 	let i = start;
 
 	while (i < lines.length) {
-		const m = lines[i].match(LIST_ITEM);
+		const m = expandTabs(lines[i]).match(LIST_ITEM);
 		if (!m || m[1].length !== baseIndent || /\d/.test(m[2]) !== ordered) break;
 		const contentIndent = m[1].length + m[2].length + 1;
 		const body = [m[3]];
@@ -186,8 +203,9 @@ function parseList(lines, start, depth) {
 					i = j;
 					break;
 				}
-				const nextIndent = lines[j].match(/^ */)[0].length;
-				const nextItem = lines[j].match(LIST_ITEM);
+				const nextLine = expandTabs(lines[j]);
+				const nextIndent = nextLine.match(/^ */)[0].length;
+				const nextItem = nextLine.match(LIST_ITEM);
 				if (nextIndent > baseIndent && !(nextItem && nextItem[1].length === baseIndent)) {
 					body.push("");
 					loose = true;
@@ -198,11 +216,12 @@ function parseList(lines, start, depth) {
 				i = j;
 				break;
 			}
-			const indent = l.match(/^ */)[0].length;
-			const item = l.match(LIST_ITEM);
+			const expanded = expandTabs(l);
+			const indent = expanded.match(/^ */)[0].length;
+			const item = expanded.match(LIST_ITEM);
 			if (item && item[1].length <= baseIndent) break;
 			if (indent <= baseIndent && !item && startsBlock(lines, i)) break;
-			body.push(l.slice(Math.min(indent, contentIndent)));
+			body.push(stripColumns(l, Math.min(indent, contentIndent)));
 			i++;
 		}
 		items.push(body);
@@ -247,8 +266,8 @@ function splitRow(line) {
 }
 
 function parseTable(lines, start) {
-	const head = splitRow(lines[start]);
-	const aligns = splitRow(lines[start + 1]).map((c) => {
+	const head = splitRow(expandTabs(lines[start]));
+	const aligns = splitRow(expandTabs(lines[start + 1])).map((c) => {
 		const l = c.startsWith(":");
 		const r = c.endsWith(":");
 		return l && r ? "center" : r ? "right" : l ? "left" : "";
@@ -257,7 +276,7 @@ function parseTable(lines, start) {
 	let i = start + 2;
 	const rows = [];
 	while (i < lines.length && lines[i].trim() && lines[i].includes("|")) {
-		rows.push(splitRow(lines[i]));
+		rows.push(splitRow(expandTabs(lines[i])));
 		i++;
 	}
 	const th = head.map((c, k) => `<th${cls(k)}>${inline(c)}</th>`).join("");
@@ -349,7 +368,7 @@ function trimUrl(url) {
 }
 
 function link(url) {
-	const e = escapeHtml(url);
+	const e = escapeHtml(url.replace(/&amp;/g, "&"));
 	return `<a href="${e}" target="_blank" rel="noopener noreferrer">${e}</a>`;
 }
 

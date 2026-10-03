@@ -39,12 +39,19 @@ const els = {
 	unlockBtn: $("unlockBtn"),
 	lockError: $("lockError"),
 	toast: $("toast"),
+	announce: $("announce"),
+	app: $("app"),
 };
 
 const KEY_PASS = "thread.passcode";
 const KEY_MODEL = "thread.model";
 const MAX_ATTACH = 4;
 const MAX_IMAGE_EDGE = 1536;
+// Must stay within the Worker's 24-image cap and 20 MB body limit.
+const MAX_SEND_IMAGES = 24;
+const IMAGE_BYTE_BUDGET = 15 * 1024 * 1024;
+const IMAGE_DROPPED = "[An earlier image was omitted to stay within the per-request image limit.]";
+const IMAGE_UNSEEN = "[An image was attached here, but the current model cannot view images.]";
 const COARSE = matchMedia("(pointer: coarse)").matches;
 
 const storage = {
@@ -167,6 +174,7 @@ function showLock(message = "") {
 	abortStream();
 	closeOverlays();
 	els.lock.hidden = false;
+	syncModal();
 	els.lockError.textContent = message;
 	els.passInput.value = "";
 	setTimeout(() => els.passInput.focus(), 60);
@@ -192,6 +200,7 @@ async function unlock(event) {
 		state.passcode = pass;
 		storage.set(KEY_PASS, pass);
 		els.lock.hidden = true;
+		syncModal();
 		els.passInput.blur();
 		await loadModels().catch(() => {});
 		renderChatList();
@@ -420,20 +429,50 @@ function scrollToBottom() {
 
 /* ---------- Sending ---------- */
 
-function toApiMessages(messages) {
-	return messages
-		.filter((m) => !(m.role === "assistant" && !m.content))
-		.map((m) => {
-			if (m.role === "assistant") return { role: "assistant", content: m.content };
-			if (!m.images?.length) return { role: "user", content: m.content };
-			return {
-				role: "user",
-				content: [
-					...(m.content ? [{ type: "text", text: m.content }] : []),
-					...m.images.map((url) => ({ type: "image_url", image_url: { url } })),
-				],
-			};
+function toApiMessages(messages, vision) {
+	// Keep the newest images that fit; older ones become a text note so the request stays sendable.
+	let count = 0;
+	let bytes = 0;
+	const kept = new Map();
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const images = messages[i].images;
+		if (!images?.length) continue;
+		kept.set(
+			i,
+			images.map((url) => {
+				const ok = vision && count < MAX_SEND_IMAGES && bytes + url.length <= IMAGE_BYTE_BUDGET;
+				if (ok) {
+					count++;
+					bytes += url.length;
+				}
+				return ok;
+			}),
+		);
+	}
+	const out = [];
+	messages.forEach((m, i) => {
+		if (m.role === "assistant") {
+			if (m.content) out.push({ role: "assistant", content: m.content });
+			return;
+		}
+		if (!m.images?.length) {
+			out.push({ role: "user", content: m.content });
+			return;
+		}
+		const flags = kept.get(i);
+		out.push({
+			role: "user",
+			content: [
+				...(m.content ? [{ type: "text", text: m.content }] : []),
+				...m.images.map((url, k) =>
+					flags[k]
+						? { type: "image_url", image_url: { url } }
+						: { type: "text", text: vision ? IMAGE_DROPPED : IMAGE_UNSEEN },
+				),
+			],
 		});
+	});
+	return out;
 }
 
 async function send() {
@@ -447,13 +486,14 @@ async function send() {
 }
 
 async function sendNow() {
+	if (!state.models.length) {
+		if (!els.input.value.trim() && !state.pending.length) return;
+		await loadModels().catch(() => {});
+		if (!state.models.length || state.processing) return;
+	}
 	const text = els.input.value.trim();
 	const images = state.pending.slice();
 	if (!text && !images.length) return;
-	if (!state.models.length) {
-		await loadModels().catch(() => {});
-		if (!state.models.length) return;
-	}
 	const model = currentModel();
 	if (images.length && !model.vision) {
 		toast(`${model.name} can't read images. Pick a model marked Vision.`);
@@ -501,24 +541,32 @@ async function regenerateNow() {
 	const lastUser = chat.messages.at(-1)?.role === "assistant" ? chat.messages.at(-2) : chat.messages.at(-1);
 	if (lastUser?.role !== "user") return;
 	if (!state.models.length) await loadModels().catch(() => {});
+	if (state.chat !== chat) return;
 	const model = currentModel();
 	if (!model) return;
 	const params = paramsFor(model);
 	if (!params) return;
-	if (chat.messages.at(-1)?.role === "assistant") chat.messages.pop();
+	const prev = chat.messages.at(-1)?.role === "assistant" ? chat.messages.pop() : null;
 	renderConversation();
-	await respond(chat, params);
+	const msg = await respond(chat, params);
+	if (prev && !msg.content && (msg.error || msg.stopped) && chat.messages.at(-1) === msg) {
+		chat.messages[chat.messages.length - 1] = prev;
+		await persist(chat);
+		if (state.chat === chat) renderConversation();
+		if (msg.error) toast(msg.error);
+	}
 }
 
 async function respond(chat, params) {
 	const model = currentModel();
-	const history = toApiMessages(chat.messages);
+	const history = toApiMessages(chat.messages, model.vision);
 	const msg = { id: uid(), role: "assistant", content: "", reasoning: "", model: model.id, time: Date.now(), pending: true };
 	chat.messages.push(msg);
 	chat.updated = Date.now();
 	persist(chat).then(renderChatList);
 
 	const view = appendMessage(msg, true);
+	els.announce.textContent = "";
 	updateRegen();
 	state.stick = true;
 	scrollToBottom();
@@ -569,7 +617,8 @@ async function respond(chat, params) {
 			signal: controller.signal,
 		});
 		if (!res.ok) throw new Error(await errorText(res));
-		await readSSE(res.body, (evt) => {
+		let finished = false;
+		const sawDone = await readSSE(res.body, (evt) => {
 			if (evt.error || evt.errors?.length) {
 				const e = evt.error ?? evt.errors[0];
 				throw new Error(typeof e === "string" ? e : e.message || "Model error");
@@ -587,9 +636,11 @@ async function respond(chat, params) {
 				if (thinkStart !== null && !msg.thinkMs) msg.thinkMs = Math.round(performance.now() - thinkStart);
 				msg.content += content;
 			}
+			if (choice?.finish_reason) finished = true;
 			if (choice?.finish_reason === "length") msg.truncated = true;
 			schedule();
 		});
+		if (!sawDone && !finished) msg.error = "The reply ended early and may be incomplete. Regenerate to try again.";
 	} catch (err) {
 		if (err.name === "AbortError") msg.stopped = true;
 		else if (err instanceof AuthError) msg.error = "Locked. Unlock and regenerate.";
@@ -606,9 +657,11 @@ async function respond(chat, params) {
 		chat.updated = Date.now();
 		renderAssistant(view, msg, false);
 		if (state.stick) scrollToBottom();
+		if (state.chat === chat) els.announce.textContent = msg.error || view.answer.textContent + (msg.stopped ? " Stopped." : "");
 		await persist(chat);
 		renderChatList();
 	}
+	return msg;
 }
 
 async function readSSE(body, onEvent) {
@@ -618,15 +671,14 @@ async function readSSE(body, onEvent) {
 	try {
 		for (;;) {
 			const { value, done } = await reader.read();
-			if (done) return;
-			buffer += decoder.decode(value, { stream: true });
+			buffer += done ? decoder.decode() + "\n" : decoder.decode(value, { stream: true });
 			let nl;
 			while ((nl = buffer.indexOf("\n")) !== -1) {
 				const line = buffer.slice(0, nl).replace(/\r$/, "");
 				buffer = buffer.slice(nl + 1);
 				if (!line.startsWith("data:")) continue;
 				const data = line.slice(5).trim();
-				if (data === "[DONE]") return;
+				if (data === "[DONE]") return true;
 				let evt;
 				try {
 					evt = JSON.parse(data);
@@ -635,6 +687,7 @@ async function readSSE(body, onEvent) {
 				}
 				onEvent(evt);
 			}
+			if (done) return false;
 		}
 	} catch (err) {
 		reader.cancel().catch(() => {});
@@ -758,12 +811,18 @@ function showScrim() {
 	requestAnimationFrame(() => els.scrim.classList.add("show"));
 }
 
+function syncModal() {
+	const overlay = [els.drawer, els.sheet, els.settings].some((o) => o.classList.contains("open"));
+	els.app.inert = overlay || !els.lock.hidden;
+}
+
 function closeOverlays() {
 	closeSettings();
 	els.drawer.classList.remove("open");
 	els.sheet.classList.remove("open");
 	els.drawer.inert = true;
 	els.sheet.inert = true;
+	syncModal();
 	els.scrim.classList.remove("show");
 	clearTimeout(scrimTimer);
 	scrimTimer = setTimeout(() => (els.scrim.hidden = true), 260);
@@ -774,6 +833,7 @@ function openDrawer() {
 	els.input.blur();
 	els.drawer.inert = false;
 	els.drawer.classList.add("open");
+	syncModal();
 	showScrim();
 }
 
@@ -788,6 +848,7 @@ function openSheet() {
 	els.input.blur();
 	els.sheet.inert = false;
 	els.sheet.classList.add("open");
+	syncModal();
 	showScrim();
 }
 
@@ -821,6 +882,8 @@ function openSettings() {
 	els.settingsBody.scrollTop = 0;
 	els.settings.inert = false;
 	els.settings.classList.add("open");
+	syncModal();
+	els.settingsBack.focus();
 }
 
 function closeSettings() {
@@ -828,6 +891,7 @@ function closeSettings() {
 	document.activeElement?.blur();
 	els.settings.classList.remove("open");
 	els.settings.inert = true;
+	syncModal();
 }
 
 function selectModel(id) {

@@ -11,6 +11,7 @@ const GROUPS = ["Reasoning", "Sampling", "Output"];
 export function createSettings(deps) {
 	const { storage, el, icon } = deps;
 	let all = read();
+	let globalText = storage.get(KEY_INSTRUCTIONS) || "";
 
 	function read() {
 		try {
@@ -36,7 +37,7 @@ export function createSettings(deps) {
 	}
 
 	function globalInstructions() {
-		return storage.get(KEY_INSTRUCTIONS) || "";
+		return globalText;
 	}
 
 	return {
@@ -76,7 +77,10 @@ export function createSettings(deps) {
 			const instr = section("Instructions");
 			const globalBox = textarea("instr-global", 3, "Applies to every chat. E.g. “Be concise. Use metric units.”");
 			globalBox.value = globalInstructions();
-			globalBox.addEventListener("input", () => storage.set(KEY_INSTRUCTIONS, globalBox.value));
+			globalBox.addEventListener("input", () => {
+				globalText = globalBox.value;
+				storage.set(KEY_INSTRUCTIONS, globalText);
+			});
 			const chatBox = textarea("instr-chat", 2, "Leave empty to use the instructions above");
 			chatBox.value = chat?.instructions || "";
 			chatBox.addEventListener("input", () => deps.onChatInstructions(chatBox.value));
@@ -176,42 +180,52 @@ export function createSettings(deps) {
 			if (value !== undefined) num.value = String(value);
 			head.append(num, reset);
 
+			// Every keystroke is committed, so a rejected entry restores the value saved when editing began.
+			let saved = value;
+			let atFocus = value;
+			const set = (v) => {
+				saved = v;
+				commit(c.key, v);
+			};
+			num.addEventListener("focus", () => (atFocus = saved));
+
 			const useSlider = c.min !== undefined && c.max !== undefined && c.max - c.min <= 100;
 			let slider = null;
 			if (useSlider) {
 				slider = el("input", "slider");
 				slider.type = "range";
-				slider.min = String(c.min);
+				slider.min = String(c.type === "integer" ? c.min : Math.floor(c.min / c.step + 1e-9) * c.step);
 				slider.max = String(c.max);
 				slider.step = c.type === "integer" ? "1" : String(c.step);
 				slider.value = String(value ?? c.default ?? c.min);
 				slider.setAttribute("aria-label", c.label);
 				slider.classList.toggle("unset", value === undefined);
 				slider.addEventListener("input", () => {
-					const v = Number(slider.value);
-					num.value = slider.value;
+					const v = Math.max(c.min, Number(slider.value));
+					num.value = String(v);
 					slider.classList.remove("unset");
 					error.hidden = true;
 					showReset(true);
-					commit(c.key, v);
+					set(v);
 				});
 				field.append(slider);
 			}
 
 			num.addEventListener("input", () => {
 				const raw = num.value.trim();
-				if (raw === "") {
+				if (raw === "" && !num.validity.badInput) {
 					error.hidden = true;
 					showReset(false);
 					if (slider) {
 						slider.value = String(c.default ?? c.min);
 						slider.classList.add("unset");
 					}
-					commit(c.key, undefined);
+					set(undefined);
 					return;
 				}
 				const v = Number(raw);
 				const ok =
+					raw !== "" &&
 					Number.isFinite(v) &&
 					(c.type !== "integer" || Number.isSafeInteger(v)) &&
 					(c.min === undefined || v >= c.min) &&
@@ -222,6 +236,14 @@ export function createSettings(deps) {
 							? `Enter ${c.type === "integer" ? "a whole number" : "a number"} from ${c.min} to ${c.max}.`
 							: `Enter ${c.type === "integer" ? "a whole number" : "a number"}.`;
 					error.hidden = false;
+					if (saved !== atFocus) {
+						set(atFocus);
+						showReset(atFocus !== undefined);
+						if (slider) {
+							slider.value = String(atFocus ?? c.default ?? c.min);
+							slider.classList.toggle("unset", atFocus === undefined);
+						}
+					}
 					return;
 				}
 				error.hidden = true;
@@ -230,7 +252,7 @@ export function createSettings(deps) {
 					slider.value = String(v);
 					slider.classList.remove("unset");
 				}
-				commit(c.key, v);
+				set(v);
 			});
 
 			reset.addEventListener("click", () => {
