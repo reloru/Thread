@@ -16,6 +16,18 @@ export const TURN_WINDOW_SECONDS = 8;
 // Aura-2 rejects longer input with HTTP 413.
 export const MAX_SPEECH_CHARS = 2000;
 
+export const VOICE_LANGS = Object.keys(VOICE_MODELS);
+
+const LANGUAGE_NAMES = { en: "English", es: "Spanish" };
+
+// Appended to the user's instructions when a chat turn comes from voice mode.
+export const voiceInstruction = (lang) =>
+	"You are talking with the user by voice, and your reply will be read aloud. " +
+	"Answer in short, natural, conversational sentences. " +
+	"Do not use markdown, bullet points, numbered lists, tables, headings, emoji or code blocks. " +
+	"Say numbers, symbols and abbreviations the way a person would say them aloud. " +
+	`Reply in ${LANGUAGE_NAMES[lang]}.`;
+
 const MIN_UTTERANCE_SAMPLES = SAMPLE_RATE / 10;
 const MAX_WAV_BYTES = 44 + MAX_UTTERANCE_SECONDS * SAMPLE_RATE * 2 + 1024;
 const MAX_SPEAK_BODY = 16 * 1024;

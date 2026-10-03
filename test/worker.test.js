@@ -309,3 +309,47 @@ test("images reach Qwen 3.8 and become a note for Llama 3.3", async () => {
 	assert.deepEqual(calls[0].input.messages[0].content[1], { type: "image_url", image_url: { url: IMG } });
 	assert.match(calls[1].input.messages[0].content, /^what\?\n\n\[An image was attached/);
 });
+
+test("voice mode turns thinking off, keeps other settings and adds the spoken-style instruction", async () => {
+	const { env, calls } = makeEnv();
+	const post = (model, extra) =>
+		worker.fetch(req("/api/chat", { method: "POST", body: { model, messages: [{ role: "user", content: "hi" }], ...extra } }), env);
+
+	const qwen = "@cf/qwen/qwen3.8-27b";
+	await post(qwen, {
+		voice: { lang: "en" },
+		instructions: "Be brief.",
+		params: { temperature: 0.3, chat_template_kwargs: { enable_thinking: true, clear_thinking: true } },
+	});
+	assert.deepEqual(calls[0].input.chat_template_kwargs, { enable_thinking: false, clear_thinking: true });
+	assert.equal(calls[0].input.temperature, 0.3);
+	const system = calls[0].input.messages[0];
+	assert.equal(system.role, "system");
+	assert.match(system.content, /^Be brief\.\n\nYou are talking with the user by voice/);
+	assert.match(system.content, /Reply in English\.$/);
+
+	await post("@cf/moonshotai/kimi-k2.6", { voice: { lang: "es" }, params: { reasoning_effort: "high" } });
+	assert.equal(calls[1].input.reasoning_effort, "none");
+	assert.match(calls[1].input.messages[0].content, /^You are talking with the user by voice/);
+	assert.match(calls[1].input.messages[0].content, /Reply in Spanish\.$/);
+
+	await post("@cf/zai-org/glm-5.3-flash", { voice: { lang: "en" }, params: { reasoning_effort: "high" } });
+	assert.equal(calls[2].input.reasoning_effort, "high", "models that cannot disable reasoning keep the user's setting");
+
+	await post(qwen, { params: { chat_template_kwargs: { enable_thinking: true } } });
+	assert.deepEqual(calls[3].input.chat_template_kwargs, { enable_thinking: true });
+	assert.equal(calls[3].input.messages[0].role, "user", "no instruction outside voice mode");
+});
+
+test("voice mode rejects a malformed voice field", async () => {
+	const { env, calls } = makeEnv();
+	for (const voice of ["en", { lang: "fr" }, {}, [], 5]) {
+		const res = await worker.fetch(
+			req("/api/chat", { method: "POST", body: { model: VISION, messages: [{ role: "user", content: "x" }], voice } }),
+			env,
+		);
+		assert.equal(res.status, 400, JSON.stringify(voice));
+		assert.match((await res.json()).error, /voice\.lang must be one of en, es/);
+	}
+	assert.equal(calls.length, 0);
+});

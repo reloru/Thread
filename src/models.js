@@ -111,6 +111,10 @@ const enableThinking = (extra = {}) => ({
 	help: "Whether to enable reasoning for this model.",
 	...extra,
 });
+// Request overrides applied in voice mode (model.voiceParams), so the first words are spoken sooner.
+// Only models with a verified way to switch reasoning off have one.
+const THINKING_OFF = { chat_template_kwargs: { enable_thinking: false } };
+
 const clearThinking = {
 	key: "clear_thinking",
 	path: "chat_template_kwargs",
@@ -197,6 +201,7 @@ export const MODELS = [
 		vision: true,
 		context: 256000,
 		price: [0.1, 0.3],
+		voiceParams: THINKING_OFF,
 		controls: [
 			...chatControls(256000, [enableThinking(), clearThinking]),
 			{ key: "skip_special_tokens", label: "Skip special tokens", group: "Output", type: "boolean", default: false },
@@ -307,6 +312,7 @@ export const MODELS = [
 		vision: false,
 		context: 1048576,
 		price: [0.44, 1.32],
+		voiceParams: THINKING_OFF,
 		controls: chatControls(1048576, [
 			reasoningEffort(["max", "high", "low", "none"], "high", {
 				note: "In testing, “none” still produced reasoning. Turn Thinking off to disable it.",
@@ -323,6 +329,7 @@ export const MODELS = [
 		vision: true,
 		context: 262144,
 		price: [0.45, 3.2],
+		voiceParams: THINKING_OFF,
 		controls: chatControls(
 			262144,
 			[
@@ -341,6 +348,7 @@ export const MODELS = [
 		vision: false,
 		context: 256000,
 		price: [0.5, 1.5],
+		voiceParams: THINKING_OFF,
 		controls: [
 			...chatControls(
 				256000,
@@ -361,6 +369,7 @@ export const MODELS = [
 		vision: true,
 		context: 262144,
 		price: [0.95, 4],
+		voiceParams: { reasoning_effort: "none" },
 		controls: chatControls(262144, [
 			reasoningEffort(["high", "none"], "high", { help: "“none” disables reasoning." }),
 			enableThinking({ note: "In testing, turning this off did not stop reasoning. Use effort “none”." }),
@@ -375,6 +384,7 @@ export const MODELS = [
 		vision: false,
 		context: 1048576,
 		price: [1.32, 3.96],
+		voiceParams: THINKING_OFF,
 		controls: chatControls(
 			1048576,
 			[

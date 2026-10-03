@@ -163,3 +163,12 @@ test("only the models with a vision input accept images", () => {
 		["@cf/google/gemma-4-26b-a4b-it", "@cf/moonshotai/kimi-k2.6", "@cf/qwen/qwen3.8-27b", "@cf/zai-org/glm-5.3-flash"],
 	);
 });
+
+test("every model's voice overrides are valid parameters for that model", () => {
+	const withOverrides = MODELS.filter((m) => m.voiceParams);
+	assert.deepEqual(
+		withOverrides.map((m) => m.name).sort(),
+		["DeepSeek V4 Flash", "DeepSeek V4 Pro", "Gemma 4 26B", "Kimi K2.6", "Nemotron 3 120B", "Qwen 3.8 27B"],
+	);
+	for (const m of withOverrides) assert.deepEqual(sanitizeParams(m.voiceParams, m), m.voiceParams, m.id);
+});

@@ -1,8 +1,8 @@
 import { DEFAULT_MAX_TOKENS, DEFAULT_MODEL, MODELS } from "./models.js";
-import { ParamError, sanitizeParams } from "../public/params.js";
+import { ParamError, isPlainObject, sanitizeParams } from "../public/params.js";
 import { agentStream, sanitizeTools } from "./agent.js";
 import { HttpError, NO_STORE, aiOptions, json, readBytes, requireMethod } from "./http.js";
-import { speak, transcribe, turn, voiceConfig } from "./voice.js";
+import { VOICE_LANGS, speak, transcribe, turn, voiceConfig, voiceInstruction } from "./voice.js";
 
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
 const MAX_MESSAGES = 400;
@@ -84,8 +84,10 @@ async function chat(request, env) {
 	const model = MODELS.find((m) => m.id === body?.model);
 	if (!model) throw new HttpError(400, "Unknown model.");
 	const messages = sanitizeMessages(body.messages, model.vision);
+	const voice = sanitizeVoice(body.voice);
 	const params = sanitizeParams(body.params, model);
-	const instructions = sanitizeInstructions(body.instructions);
+	if (voice) applyVoiceParams(params, model);
+	const instructions = [sanitizeInstructions(body.instructions), voice && voiceInstruction(voice)].filter(Boolean).join("\n\n");
 	if (instructions) messages.unshift({ role: "system", content: instructions });
 	let tools;
 	try {
@@ -183,6 +185,21 @@ export function sanitizeMessages(input, vision) {
 
 	if (out[out.length - 1].role !== "user") throw new HttpError(400, "Last message must be from the user.");
 	return out;
+}
+
+// Voice mode: { lang } of the selected voice, or null for a normal chat.
+export function sanitizeVoice(input) {
+	if (input === undefined || input === null) return null;
+	if (!isPlainObject(input) || !VOICE_LANGS.includes(input.lang)) {
+		throw new HttpError(400, `voice.lang must be one of ${VOICE_LANGS.join(", ")}.`);
+	}
+	return input.lang;
+}
+
+function applyVoiceParams(params, model) {
+	for (const [key, value] of Object.entries(model.voiceParams || {})) {
+		params[key] = isPlainObject(value) && isPlainObject(params[key]) ? { ...params[key], ...value } : value;
+	}
 }
 
 export function sanitizeInstructions(input) {

@@ -1,6 +1,7 @@
 import { renderMarkdown } from "./markdown.js";
 import * as db from "./db.js";
 import { createSettings } from "./settings.js";
+import { createVoice } from "./voice.js";
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -11,6 +12,8 @@ const els = {
 	form: $("form"),
 	sendBtn: $("sendBtn"),
 	attachBtn: $("attachBtn"),
+	voiceBtn: $("voiceBtn"),
+	voice: $("voice"),
 	file: $("file"),
 	attachments: $("attachments"),
 	toolChips: $("toolChips"),
@@ -104,6 +107,20 @@ const settings = createSettings({
 		clearTimeout(instructionsTimer);
 		instructionsTimer = setTimeout(() => persist(chat), 400);
 	},
+});
+
+const voice = createVoice({
+	storage,
+	el,
+	icon,
+	toast,
+	api,
+	isAuthError: (err) => err instanceof AuthError,
+	turn: voiceTurn,
+	stopReply: abortStream,
+	cutReply,
+	modelName: () => currentModel()?.name || "",
+	syncModal,
 });
 
 function init() {
@@ -649,6 +666,38 @@ async function sendNow() {
 	await respond(chat, params);
 }
 
+// Voice mode: the user cut a finished reply off, so keep only the part that was spoken.
+function cutReply(msg, keep) {
+	msg.content = msg.content.slice(0, keep);
+	msg.stopped = true;
+	const chat = state.chat;
+	if (!chat.messages.includes(msg)) return;
+	renderConversation();
+	persist(chat);
+}
+
+// A turn spoken in voice mode: same path as a typed message, with the voice request fields and hooks.
+async function voiceTurn(text, voiceInfo, hooks) {
+	if (state.controller || state.busy) return null;
+	state.busy = true;
+	try {
+		if (!state.models.length) await loadModels().catch(() => {});
+		const model = currentModel();
+		if (!model) return null;
+		const params = paramsFor(model);
+		if (!params) return null;
+		const chat = state.chat;
+		const userMsg = { id: uid(), role: "user", content: text, time: Date.now() };
+		chat.messages.push(userMsg);
+		if (chat.messages.length === 1) chat.title = makeTitle(text);
+		appendMessage(userMsg, false);
+		updateEmpty();
+		return await respond(chat, params, { ...hooks, voice: voiceInfo });
+	} finally {
+		state.busy = false;
+	}
+}
+
 function paramsFor(model) {
 	try {
 		return settings.params(model);
@@ -689,7 +738,8 @@ async function regenerateNow() {
 	}
 }
 
-async function respond(chat, params) {
+// hooks (voice mode): voice = { lang } for the request, onContent(delta, msg) per text chunk, onEnd(msg) before the final render.
+async function respond(chat, params, hooks = {}) {
 	const model = currentModel();
 	const history = toApiMessages(chat.messages, model.vision);
 	const msg = { id: uid(), role: "assistant", content: "", reasoning: "", model: model.id, time: Date.now(), pending: true };
@@ -747,6 +797,7 @@ async function respond(chat, params) {
 				instructions: settings.instructionsFor(chat),
 				tools: chat.tools?.length ? chat.tools : undefined,
 				chatId: chat.id,
+				voice: hooks.voice,
 			}),
 			signal: controller.signal,
 		});
@@ -774,6 +825,7 @@ async function respond(chat, params) {
 			if (content) {
 				if (thinkStart !== null && !msg.thinkMs) msg.thinkMs = Math.round(performance.now() - thinkStart);
 				msg.content += content;
+				hooks.onContent?.(content, msg);
 			}
 			if (choice?.finish_reason) finished = true;
 			if (choice?.finish_reason === "length") msg.truncated = true;
@@ -796,6 +848,7 @@ async function respond(chat, params) {
 			}
 		}
 		if (thinkStart !== null && !msg.thinkMs) msg.thinkMs = Math.round(performance.now() - thinkStart);
+		hooks.onEnd?.(msg);
 		if (state.controller === controller) {
 			state.controller = null;
 			setStreaming(false);
@@ -1002,12 +1055,13 @@ function showScrim() {
 }
 
 function syncModal() {
-	const overlay = [els.drawer, els.sheet, els.settings].some((o) => o.classList.contains("open"));
+	const overlay = [els.drawer, els.sheet, els.settings, els.voice].some((o) => o.classList.contains("open"));
 	els.app.inert = overlay || !els.lock.hidden;
 }
 
 function closeOverlays() {
 	closeSettings();
+	voice.close();
 	els.drawer.classList.remove("open");
 	els.sheet.classList.remove("open");
 	els.drawer.inert = true;
@@ -1171,6 +1225,18 @@ function bindEvents() {
 	});
 
 	els.attachBtn.addEventListener("click", () => els.file.click());
+	els.voiceBtn.addEventListener("click", () => {
+		if (state.controller || state.busy) {
+			toast("Wait for the reply to finish");
+			return;
+		}
+		if (!state.models.length) {
+			toast("Models haven't loaded yet");
+			loadModels().catch(() => {});
+			return;
+		}
+		voice.open();
+	});
 	els.toolChips.addEventListener("click", (e) => {
 		const chip = e.target.closest(".chip");
 		if (chip) toggleTool(chip.dataset.tool);
@@ -1255,7 +1321,7 @@ function bindEvents() {
 		els.passToggle.setAttribute("aria-label", show ? "Hide passcode" : "Show passcode");
 	});
 	document.addEventListener("keydown", (e) => {
-		if (e.key === "Escape") closeOverlays();
+		if (e.key === "Escape" && !voice.isOpen) closeOverlays();
 	});
 }
 
