@@ -21,6 +21,86 @@ const HR = /^ {0,3}([-*_])(\s*\1){2,}\s*$/;
 const QUOTE = /^ {0,3}>\s?(.*)$/;
 const LIST_ITEM = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
 
+// While a reply is still arriving, its last paragraph can end inside an unfinished span, and the full
+// renderer would show the raw marker (*, **, `, ~~, "](") until the closing one streams in. This returns the
+// text with that tail completed: open spans are closed, a dangling marker or half-typed link is dropped.
+// Only the last paragraph is touched, and a completed message should be rendered without it.
+const TAGS = /<(?:em|strong|del|code)>/g;
+const tagCount = (html) => (html.match(TAGS) || []).length;
+const WORD = /[\p{L}\p{N}]/u;
+const FENCE_LINE = /^ {0,3}(?:`{3,}|~{3,})/gm;
+
+export function healStreaming(src) {
+	const text = String(src ?? "");
+	const blank = text.lastIndexOf("\n\n");
+	const cut = blank === -1 ? 0 : blank + 2;
+	const head = text.slice(0, cut);
+	let tail = text.slice(cut);
+	if (!/[*_~`\[]/.test(tail) || (head.match(FENCE_LINE) || []).length % 2 || (tail.match(FENCE_LINE) || []).length % 2) {
+		return text;
+	}
+	tail = tail
+		.replace(/\[([^\]\n]*)\]\([^)\n]*$/, "$1")
+		.replace(/(^|[\s(])\[([^\]\n]*)$/, "$1$2")
+		.replace(/(^|[\s(])(?:\*\*|__|~~|\*|_|~|`)$/, "$1");
+	// The first half of a doubled closing marker ("text*" on its way to "text**") belongs to the closer.
+	const half = /([*_~])$/.exec(tail)?.[1];
+	const base = half && openSpans(tail.slice(0, -1)).at(-1) === half + half ? tail.slice(0, -1) : tail;
+	const closers = openSpans(base).reverse().join("");
+	if (closers) {
+		// A closing marker only works right after a word, so a trailing space goes first.
+		const closed = base.replace(/\s+$/, "") + closers;
+		if (tagCount(renderMarkdown(closed)) > tagCount(renderMarkdown(tail))) tail = closed;
+	}
+	return head + tail;
+}
+
+// Markers that are opened and not yet closed at the end of an inline run, outermost first.
+function openSpans(t) {
+	const stack = [];
+	let i = 0;
+	while (i < t.length) {
+		const ch = t[i];
+		if (ch === "\\") {
+			i += 2;
+			continue;
+		}
+		if (ch === "`") {
+			let n = 1;
+			while (t[i + n] === "`") n++;
+			const run = t.slice(i, i + n);
+			const end = t.indexOf(run, i + n);
+			if (end === -1) {
+				stack.push(run);
+				return stack;
+			}
+			i = end + n;
+			continue;
+		}
+		if (ch !== "*" && ch !== "_" && ch !== "~") {
+			i++;
+			continue;
+		}
+		let n = 1;
+		while (t[i + n] === ch) n++;
+		const before = i > 0 ? t[i - 1] : "";
+		const after = t[i + n] ?? "";
+		const units = [];
+		for (let left = n; left > 0; left -= 2) units.push(left >= 2 ? ch + ch : ch);
+		for (const unit of units) {
+			if (unit === "~") continue;
+			const open = stack.lastIndexOf(unit);
+			const canClose = open !== -1 && before !== "" && !/\s/.test(before);
+			const wide = unit.length === 2;
+			const canOpen = after !== "" && !/\s/.test(after) && (wide || (before === "" || !WORD.test(before)));
+			if (canClose) stack.length = open;
+			else if (canOpen) stack.push(unit);
+		}
+		i += n;
+	}
+	return stack;
+}
+
 export function renderMarkdown(src) {
 	const lines = String(src ?? "").replace(/\0/g, "").replace(/\r\n?/g, "\n").split("\n");
 	return renderBlocks(lines, 0);
