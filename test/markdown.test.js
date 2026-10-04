@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderMarkdown } from "../public/markdown.js";
+import { healStreaming, renderMarkdown } from "../public/markdown.js";
 
 test("escapes raw HTML", () => {
 	const html = renderMarkdown('<script>alert(1)</script>\n<img src=x onerror="alert(1)">');
@@ -154,4 +154,65 @@ test("&amp; in bare and angle-bracket autolinks is decoded once", () => {
 	const html = renderMarkdown("https://a.com/?q=1&amp;r=2 and <https://b.com/?x=1&amp;y=2>");
 	assert.match(html, /href="https:\/\/a\.com\/\?q=1&amp;r=2"/);
 	assert.match(html, /href="https:\/\/b\.com\/\?x=1&amp;y=2"/);
+});
+
+const visibleText = (html) => html.replace(/<[^>]*>/g, "");
+
+test("healStreaming completes an unfinished span in the last paragraph", () => {
+	const cases = [
+		["intention: *\u201cMay the day begin", "<em>\u201cMay the day begin</em>"],
+		["**bold unfinished", "<strong>bold unfinished</strong>"],
+		["a `code unfinished", "<code>code unfinished</code>"],
+		["~~struck", "<del>struck</del>"],
+		["_half emphasis", "<em>half emphasis</em>"],
+		["- item *em", "<em>em</em>"],
+		["first\n\nsecond **b", "<p>second <strong>b</strong></p>"],
+	];
+	for (const [src, html] of cases) assert.ok(renderMarkdown(healStreaming(src)).includes(html), src);
+});
+
+test("healStreaming drops a dangling marker or half-typed link instead of showing it", () => {
+	assert.equal(healStreaming("text with *"), "text with ");
+	assert.equal(healStreaming("text with **"), "text with ");
+	assert.equal(healStreaming("see [the docs](https://exa"), "see the docs");
+	assert.equal(healStreaming("see [the do"), "see the do");
+	assert.ok(!renderMarkdown(healStreaming("see [the docs](https://exa")).includes("<a "));
+});
+
+test("healStreaming leaves finished text, prose with symbols, and code fences alone", () => {
+	for (const text of [
+		"Done *fine* and **bold** and `code` and ~~gone~~.",
+		"snake_case_name and 2 * 3 * 4 and 5 > 3",
+		"```py\nx = *",
+		"```py\nprint('a')\n```\n\nafter",
+		"A [link](https://example.com) and [ref]",
+		"plain text",
+		"",
+	]) {
+		assert.equal(healStreaming(text), text);
+	}
+	assert.equal(healStreaming(undefined), "");
+});
+
+test("healStreaming only changes the last paragraph", () => {
+	assert.equal(healStreaming("keep *this\n\nthen *that"), "keep *this\n\nthen *that*");
+});
+
+test("no prefix of a streamed reply shows a raw marker once healed", () => {
+	const reply =
+		"Hello *there* and **bold *nested* text** with `code` and ~~gone~~ plus a [link](https://example.com/a) and _under_ done.\n\n" +
+		"## Heading *one*\n\n- first **item**\n- second *item* here\n\nLast paragraph *\u201cquoted text\u201d* ends.";
+	for (let i = 1; i <= reply.length; i++) {
+		const prefix = reply.slice(0, i);
+		const shown = visibleText(renderMarkdown(healStreaming(prefix)));
+		assert.ok(!/[*_~`]|\]\(/.test(shown), `prefix ${i}: ${JSON.stringify(prefix.slice(-30))} shows ${JSON.stringify(shown.slice(-40))}`);
+	}
+	assert.equal(healStreaming(reply), reply);
+});
+
+test("healStreaming stays fast on a long reply", () => {
+	const long = "word ".repeat(20000) + "*unfinished";
+	const t0 = performance.now();
+	for (let i = 0; i < 20; i++) healStreaming(long);
+	assert.ok(performance.now() - t0 < 500);
 });

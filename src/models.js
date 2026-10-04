@@ -50,15 +50,17 @@ const presencePenalty = {
 	default: 0,
 	help: "Penalizes new tokens based on whether they appear in the text so far.",
 };
-const maxTokens = (context) => ({
+const maxTokens = (context, def = DEFAULT_MAX_TOKENS, extra = {}) => ({
 	key: "max_completion_tokens",
 	label: "Max output tokens",
 	group: "Output",
 	type: "integer",
 	min: 1,
 	max: context,
-	default: DEFAULT_MAX_TOKENS,
-	help: "An upper bound for the number of tokens that can be generated, reasoning included. When unset, the app sends 16384.",
+	default: def,
+	emptyLabel: String(def),
+	help: `An upper bound for the number of tokens that can be generated, reasoning included. When empty, the app sends ${def}.`,
+	...extra,
 });
 const seed = (extra = {}) => ({
 	key: "seed",
@@ -110,6 +112,10 @@ const enableThinking = (extra = {}) => ({
 	help: "Whether to enable reasoning for this model.",
 	...extra,
 });
+// Request overrides applied in voice mode (model.voiceParams), so the first words are spoken sooner.
+// Only models with a verified way to switch reasoning off have one.
+const THINKING_OFF = { chat_template_kwargs: { enable_thinking: false } };
+
 const clearThinking = {
 	key: "clear_thinking",
 	path: "chat_template_kwargs",
@@ -118,6 +124,24 @@ const clearThinking = {
 	type: "boolean",
 	default: false,
 	help: "If false, preserves reasoning context between turns.",
+};
+const lowEffort = {
+	key: "low_effort",
+	path: "chat_template_kwargs",
+	label: "Low effort",
+	group: "Reasoning",
+	type: "boolean",
+	default: false,
+	help: "When Thinking is on, use Nemotron's low-effort reasoning mode, which uses significantly fewer reasoning tokens.",
+};
+const forceNonemptyContent = {
+	key: "force_nonempty_content",
+	path: "chat_template_kwargs",
+	label: "Force non-empty content",
+	group: "Output",
+	type: "boolean",
+	default: false,
+	help: "Cloudflare's docs: NVIDIA suggests turning this on for coding agents.",
 };
 
 // Schema fields of the OpenAI-compatible chat models that have no dedicated control.
@@ -142,10 +166,13 @@ const CHAT_EXTRA_KEYS = [
 	"web_search_options",
 ];
 
+// Every chat model rejects top_p 0 (HTTP 400, 500 on Nemotron), whatever its schema says.
+const TOP_P_FLOOR = { min: 0.001, note: "The service rejects 0." };
+
 const chatControls = (context, reasoning) => [
 	...reasoning,
 	temperature(),
-	topP(),
+	topP(TOP_P_FLOOR),
 	frequencyPenalty,
 	presencePenalty,
 	maxTokens(context),
@@ -176,11 +203,61 @@ export const MODELS = [
 		vision: true,
 		context: 256000,
 		price: [0.1, 0.3],
+		voiceParams: THINKING_OFF,
 		controls: [
 			...chatControls(256000, [enableThinking(), clearThinking]),
 			{ key: "skip_special_tokens", label: "Skip special tokens", group: "Output", type: "boolean", default: false },
 		],
 		extraKeys: CHAT_EXTRA_KEYS,
+	},
+	{
+		id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+		name: "Llama 3.3 70B",
+		vendor: "Meta",
+		vision: false,
+		context: 24000,
+		price: [0.293, 2.253],
+		defaultMaxTokens: 4096,
+		controls: [
+			temperature({
+				default: 0.6,
+				help: "Controls the randomness of the output; higher values produce more random results.",
+				note: "The schema allows up to 5; the service rejects values above 2.",
+			}),
+			topP({
+				min: 0.001,
+				default: undefined,
+				help: "Lower values make outputs more predictable; higher values allow for more varied responses.",
+			}),
+			{
+				key: "top_k",
+				label: "Top K",
+				group: "Sampling",
+				type: "integer",
+				min: 1,
+				max: 50,
+				help: "Limits the model to choose from the top k most probable tokens.",
+			},
+			frequencyPenalty,
+			presencePenalty,
+			{
+				key: "repetition_penalty",
+				label: "Repetition penalty",
+				group: "Sampling",
+				type: "number",
+				min: 0,
+				max: 2,
+				step: 0.05,
+				help: "Penalty for repeated tokens; higher values discourage repetition.",
+			},
+			maxTokens(24000, 4096, {
+				note: "The prompt and the output together must fit in the 24,000-token context window; the service rejects a request otherwise.",
+			}),
+			stop,
+			seed({ min: 1, max: 9999999999, help: "Random seed for reproducibility of the generation." }),
+			responseFormat(["json_object"]),
+		],
+		extraKeys: ["functions", "max_tokens", "raw", "tools"],
 	},
 	{
 		id: "@cf/openai/gpt-oss-120b",
@@ -237,6 +314,7 @@ export const MODELS = [
 		vision: false,
 		context: 1048576,
 		price: [0.44, 1.32],
+		voiceParams: THINKING_OFF,
 		controls: chatControls(1048576, [
 			reasoningEffort(["max", "high", "low", "none"], "high", {
 				note: "In testing, “none” still produced reasoning. Turn Thinking off to disable it.",
@@ -247,17 +325,76 @@ export const MODELS = [
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
+		id: "@cf/qwen/qwen3.8-27b",
+		name: "Qwen 3.8 27B",
+		vendor: "Alibaba",
+		vision: true,
+		context: 262144,
+		price: [0.45, 3.2],
+		voiceParams: THINKING_OFF,
+		controls: chatControls(
+			262144,
+			[
+				reasoningEffort(["xhigh", "medium", "low"], "xhigh", { help: "Turn Thinking off to disable reasoning." }),
+				enableThinking(),
+				clearThinking,
+			],
+		),
+		extraKeys: CHAT_EXTRA_KEYS,
+	},
+	{
+		id: "@cf/nvidia/nemotron-3-120b-a12b",
+		name: "Nemotron 3 120B",
+		vendor: "NVIDIA",
+		vision: false,
+		context: 256000,
+		price: [0.5, 1.5],
+		voiceParams: THINKING_OFF,
+		controls: [
+			...chatControls(
+				256000,
+				[
+					enableThinking({ help: "Reasoning is on by default. This model has no reasoning effort field; use Low effort instead." }),
+					lowEffort,
+				],
+			),
+			forceNonemptyContent,
+		],
+		extraKeys: CHAT_EXTRA_KEYS,
+	},
+	{
 		id: "@cf/moonshotai/kimi-k2.6",
 		name: "Kimi K2.6",
 		vendor: "Moonshot AI",
 		vision: true,
 		context: 262144,
 		price: [0.95, 4],
+		voiceParams: { reasoning_effort: "none" },
 		controls: chatControls(262144, [
 			reasoningEffort(["high", "none"], "high", { help: "“none” disables reasoning." }),
 			enableThinking({ note: "In testing, turning this off did not stop reasoning. Use effort “none”." }),
 			clearThinking,
 		]),
+		extraKeys: CHAT_EXTRA_KEYS,
+	},
+	{
+		id: "@cf/deepseek-ai/deepseek-v4-pro-0813",
+		name: "DeepSeek V4 Pro",
+		vendor: "DeepSeek",
+		vision: false,
+		context: 1048576,
+		price: [1.32, 3.96],
+		voiceParams: THINKING_OFF,
+		controls: chatControls(
+			1048576,
+			[
+				reasoningEffort(["max", "high", "low", "none"], "high", {
+					note: "In testing, “none” still produced reasoning. Turn Thinking off to disable it.",
+				}),
+				enableThinking(),
+				clearThinking,
+			],
+		),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{

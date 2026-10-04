@@ -1,6 +1,7 @@
-import { renderMarkdown } from "./markdown.js";
+import { healStreaming, renderMarkdown } from "./markdown.js";
 import * as db from "./db.js";
 import { createSettings } from "./settings.js";
+import { createVoice } from "./voice.js";
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -11,6 +12,8 @@ const els = {
 	form: $("form"),
 	sendBtn: $("sendBtn"),
 	attachBtn: $("attachBtn"),
+	voiceBtn: $("voiceBtn"),
+	voice: $("voice"),
 	file: $("file"),
 	attachments: $("attachments"),
 	toolChips: $("toolChips"),
@@ -55,6 +58,7 @@ const IMAGE_BYTE_BUDGET = 15 * 1024 * 1024;
 const IMAGE_DROPPED = "[An earlier image was omitted to stay within the per-request image limit.]";
 const IMAGE_UNSEEN = "[An image was attached here, but the current model cannot view images.]";
 const COARSE = matchMedia("(pointer: coarse)").matches;
+const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
 
 const storage = {
 	get(k) {
@@ -104,6 +108,20 @@ const settings = createSettings({
 		clearTimeout(instructionsTimer);
 		instructionsTimer = setTimeout(() => persist(chat), 400);
 	},
+});
+
+const voice = createVoice({
+	storage,
+	el,
+	icon,
+	toast,
+	api,
+	isAuthError: (err) => err instanceof AuthError,
+	turn: voiceTurn,
+	stopReply: abortStream,
+	cutReply,
+	modelName: () => currentModel()?.name || "",
+	syncModal,
 });
 
 function init() {
@@ -425,7 +443,7 @@ function renderAssistant(view, msg, live) {
 		: msg.thinkMs
 			? `Thought for ${formatDuration(msg.thinkMs)}`
 			: "Thoughts";
-	if (hasReasoning && view.thinking.open) view.thinkBody.innerHTML = renderMarkdown(msg.reasoning);
+	if (hasReasoning && view.thinking.open) view.thinkBody.innerHTML = renderMarkdown(thinkingLive ? healStreaming(msg.reasoning) : msg.reasoning);
 
 	const tools = msg.tools || [];
 	if (view.toolsVersion !== (msg.toolsVersion || 0)) {
@@ -440,7 +458,7 @@ function renderAssistant(view, msg, live) {
 			view.answer.firstChild.append(el("i"), el("i"), el("i"));
 		}
 	} else {
-		view.answer.innerHTML = renderMarkdown(msg.content);
+		view.answer.innerHTML = renderMarkdown(live ? healStreaming(msg.content) : msg.content);
 	}
 	view.answer.classList.toggle("streaming", live && Boolean(msg.content));
 
@@ -533,6 +551,57 @@ function updateRegen() {
 function scrollToBottom() {
 	const s = els.scroller;
 	s.scrollTop = s.scrollHeight;
+}
+
+// While a reply streams, the page glides toward the bottom a little every frame. Setting the position on each
+// update instead moved the whole text up a line at a time, at irregular intervals, which is hard to read.
+// The glide holds off while a finger is down or the page is still coasting from a swipe.
+const FOLLOW_TAU_MS = 100;
+const FOLLOW_YIELD_MS = 180;
+const follow = { raf: 0, last: 0, pos: 0, sent: [], held: false, yielded: 0 };
+
+// Scroll-dependent chrome: the scroll-to-latest button and the top bar's divider. Returns the distance from the bottom.
+function updateScrollUi() {
+	const s = els.scroller;
+	const distance = s.scrollHeight - s.scrollTop - s.clientHeight;
+	els.toBottom.classList.toggle("show", distance > 240);
+	els.topbar.classList.toggle("scrolled", s.scrollTop > 4);
+	return distance;
+}
+
+function followBottom() {
+	if (REDUCED_MOTION.matches) {
+		scrollToBottom();
+		return;
+	}
+	if (follow.raf) return;
+	follow.last = 0;
+	follow.pos = els.scroller.scrollTop;
+	follow.raf = requestAnimationFrame(followStep);
+}
+
+function followStep(now) {
+	follow.raf = 0;
+	if (!state.stick) return;
+	const s = els.scroller;
+	const dt = follow.last ? Math.min(64, now - follow.last) : 16;
+	follow.last = now;
+	if (follow.held || now - follow.yielded < FOLLOW_YIELD_MS) {
+		follow.pos = s.scrollTop;
+		follow.raf = requestAnimationFrame(followStep);
+		return;
+	}
+	if (Math.abs(s.scrollTop - follow.pos) > 1.5) follow.pos = s.scrollTop;
+	const gap = s.scrollHeight - s.clientHeight - follow.pos;
+	if (gap > 0.3) {
+		// Exponential approach, never slower than half a pixel a frame so the last stretch still arrives.
+		follow.pos += Math.min(gap, Math.max(0.5, gap * (1 - Math.exp(-dt / FOLLOW_TAU_MS))));
+		s.scrollTop = follow.pos;
+		follow.sent.push(s.scrollTop);
+		if (follow.sent.length > 6) follow.sent.shift();
+	}
+	if (state.controller || gap > 0.3) follow.raf = requestAnimationFrame(followStep);
+	else follow.sent.length = 0;
 }
 
 /* ---------- Sending ---------- */
@@ -649,6 +718,38 @@ async function sendNow() {
 	await respond(chat, params);
 }
 
+// Voice mode: the user cut a finished reply off, so keep only the part that was spoken.
+function cutReply(msg, keep) {
+	msg.content = msg.content.slice(0, keep);
+	msg.stopped = true;
+	const chat = state.chat;
+	if (!chat.messages.includes(msg)) return;
+	renderConversation();
+	persist(chat);
+}
+
+// A turn spoken in voice mode: same path as a typed message, with the voice request fields and hooks.
+async function voiceTurn(text, voiceInfo, hooks) {
+	if (state.controller || state.busy) return null;
+	state.busy = true;
+	try {
+		if (!state.models.length) await loadModels().catch(() => {});
+		const model = currentModel();
+		if (!model) return null;
+		const params = paramsFor(model);
+		if (!params) return null;
+		const chat = state.chat;
+		const userMsg = { id: uid(), role: "user", content: text, time: Date.now() };
+		chat.messages.push(userMsg);
+		if (chat.messages.length === 1) chat.title = makeTitle(text);
+		appendMessage(userMsg, false);
+		updateEmpty();
+		return await respond(chat, params, { ...hooks, voice: voiceInfo });
+	} finally {
+		state.busy = false;
+	}
+}
+
 function paramsFor(model) {
 	try {
 		return settings.params(model);
@@ -689,7 +790,8 @@ async function regenerateNow() {
 	}
 }
 
-async function respond(chat, params) {
+// hooks (voice mode): voice = { lang } for the request, onContent(delta, msg) per text chunk, onEnd(msg) before the final render.
+async function respond(chat, params, hooks = {}) {
 	const model = currentModel();
 	const history = toApiMessages(chat.messages, model.vision);
 	const msg = { id: uid(), role: "assistant", content: "", reasoning: "", model: model.id, time: Date.now(), pending: true };
@@ -722,7 +824,8 @@ async function respond(chat, params) {
 				frame = 0;
 				const t0 = performance.now();
 				renderAssistant(view, msg, true);
-				if (state.stick) scrollToBottom();
+				if (state.stick) followBottom();
+				else updateScrollUi();
 				lastRender = performance.now();
 				renderCost = lastRender - t0;
 				if (lastRender - lastSave > 3000) {
@@ -747,6 +850,7 @@ async function respond(chat, params) {
 				instructions: settings.instructionsFor(chat),
 				tools: chat.tools?.length ? chat.tools : undefined,
 				chatId: chat.id,
+				voice: hooks.voice,
 			}),
 			signal: controller.signal,
 		});
@@ -774,6 +878,7 @@ async function respond(chat, params) {
 			if (content) {
 				if (thinkStart !== null && !msg.thinkMs) msg.thinkMs = Math.round(performance.now() - thinkStart);
 				msg.content += content;
+				hooks.onContent?.(content, msg);
 			}
 			if (choice?.finish_reason) finished = true;
 			if (choice?.finish_reason === "length") msg.truncated = true;
@@ -796,13 +901,15 @@ async function respond(chat, params) {
 			}
 		}
 		if (thinkStart !== null && !msg.thinkMs) msg.thinkMs = Math.round(performance.now() - thinkStart);
+		hooks.onEnd?.(msg);
 		if (state.controller === controller) {
 			state.controller = null;
 			setStreaming(false);
 		}
 		chat.updated = Date.now();
 		renderAssistant(view, msg, false);
-		if (state.stick) scrollToBottom();
+		if (state.stick) followBottom();
+		else updateScrollUi();
 		if (state.chat === chat) els.announce.textContent = msg.error || view.answer.textContent + (msg.stopped ? " Stopped." : "");
 		await persist(chat);
 		renderChatList();
@@ -1002,12 +1109,13 @@ function showScrim() {
 }
 
 function syncModal() {
-	const overlay = [els.drawer, els.sheet, els.settings].some((o) => o.classList.contains("open"));
+	const overlay = [els.drawer, els.sheet, els.settings, els.voice].some((o) => o.classList.contains("open"));
 	els.app.inert = overlay || !els.lock.hidden;
 }
 
 function closeOverlays() {
 	closeSettings();
+	voice.close();
 	els.drawer.classList.remove("open");
 	els.sheet.classList.remove("open");
 	els.drawer.inert = true;
@@ -1171,6 +1279,18 @@ function bindEvents() {
 	});
 
 	els.attachBtn.addEventListener("click", () => els.file.click());
+	els.voiceBtn.addEventListener("click", () => {
+		if (state.controller || state.busy) {
+			toast("Wait for the reply to finish");
+			return;
+		}
+		if (!state.models.length) {
+			toast("Models haven't loaded yet");
+			loadModels().catch(() => {});
+			return;
+		}
+		voice.open();
+	});
 	els.toolChips.addEventListener("click", (e) => {
 		const chip = e.target.closest(".chip");
 		if (chip) toggleTool(chip.dataset.tool);
@@ -1185,16 +1305,27 @@ function bindEvents() {
 		"scroll",
 		() => {
 			const s = els.scroller;
-			const distance = s.scrollHeight - s.scrollTop - s.clientHeight;
-			state.stick = distance < 80;
-			els.toBottom.classList.toggle("show", distance > 240);
-			els.topbar.classList.toggle("scrolled", s.scrollTop > 4);
+			const distance = updateScrollUi();
+			// Scrolling that the glide did itself says nothing about whether the reader moved away.
+			if (!follow.sent.some((v) => Math.abs(v - s.scrollTop) <= 1.5)) {
+				follow.yielded = performance.now();
+				state.stick = distance < 80;
+			}
 		},
 		{ passive: true },
 	);
+	els.scroller.addEventListener("touchstart", () => (follow.held = true), { passive: true });
+	for (const type of ["touchend", "touchcancel"]) {
+		els.scroller.addEventListener(type, () => {
+			follow.held = false;
+			follow.yielded = performance.now();
+		}, { passive: true });
+	}
+	els.scroller.addEventListener("wheel", () => (follow.yielded = performance.now()), { passive: true });
 	els.toBottom.addEventListener("click", () => {
 		state.stick = true;
-		els.scroller.scrollTo({ top: els.scroller.scrollHeight, behavior: "smooth" });
+		follow.yielded = 0;
+		followBottom();
 	});
 
 	els.messages.addEventListener("click", (e) => {
@@ -1255,7 +1386,7 @@ function bindEvents() {
 		els.passToggle.setAttribute("aria-label", show ? "Hide passcode" : "Show passcode");
 	});
 	document.addEventListener("keydown", (e) => {
-		if (e.key === "Escape") closeOverlays();
+		if (e.key === "Escape" && !voice.isOpen) closeOverlays();
 	});
 }
 

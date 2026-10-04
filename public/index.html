@@ -39,6 +39,10 @@
 		<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></symbol>
 		<symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
 		<symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+		<symbol id="i-wave" viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></symbol>
+		<symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+		<symbol id="i-mic-off" viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M9 9v2a3 3 0 0 0 5 2.2M15 9.3V6a3 3 0 0 0-5.7-1.3"/><path d="M5 11a7 7 0 0 0 11.2 5.6M19 11a7 7 0 0 1-.6 2.8M12 18v3"/></symbol>
+		<symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></symbol>
 		<symbol id="i-logo" viewBox="0 0 64 64"><path d="M14 30c0-10 8-17 18-17s18 7 18 17-8 17-18 17c-2.6 0-5-.4-7.2-1.3L15 50l2.6-8.4C15.3 38.8 14 34.6 14 30z"/><path d="M23 27c4-4 7 4 11 0s7 4 10 1M23 34c4-4 7 4 11 0"/></symbol>
 	</svg>
 
@@ -71,6 +75,7 @@
 			<form class="composer-box" id="form">
 				<button type="button" class="icon-btn attach" id="attachBtn" aria-label="Attach image"><svg><use href="#i-plus"/></svg></button>
 				<textarea id="input" rows="1" placeholder="Message" enterkeyhint="send" autocomplete="off"></textarea>
+				<button type="button" class="icon-btn voice-btn" id="voiceBtn" aria-label="Voice chat"><svg><use href="#i-wave"/></svg></button>
 				<button type="submit" class="send" id="sendBtn" aria-label="Send" disabled><svg><use href="#i-up"/></svg></button>
 			</form>
 			<input type="file" id="file" accept="image/*,.csv,.docx,.et,.htm,.html,.numbers,.odp,.ods,.odt,.otp,.pdf,.potx,.ppsm,.ppsx,.pptm,.pptx,.xls,.xlsb,.xlsm,.xlsx,.xml" multiple hidden>
@@ -111,6 +116,50 @@
 			<button type="button" class="text-link" id="settingsReset">Reset</button>
 		</header>
 		<div class="settings-body" id="settingsBody"></div>
+	</div>
+
+	<div class="voice" id="voice" role="dialog" aria-modal="true" aria-label="Voice chat" inert>
+		<header class="voice-head">
+			<button type="button" class="icon-btn" id="voiceClose" aria-label="End voice chat"><svg><use href="#i-x"/></svg></button>
+			<div class="voice-title">
+				<span>Voice</span>
+				<small id="voiceModel"></small>
+			</div>
+			<button type="button" class="model-pill" id="voiceChip" aria-haspopup="dialog" aria-label="Choose voice">
+				<span id="voiceChipName">Voice</span><svg><use href="#i-chev"/></svg>
+			</button>
+		</header>
+		<div class="voice-stage">
+			<button type="button" class="voice-orb" id="voiceOrb" data-state="starting" aria-label="Voice level"></button>
+			<div class="voice-state" id="voiceState" role="status">Starting…</div>
+			<p class="voice-hint" id="voiceHint"></p>
+			<div class="voice-caption" id="voiceCaption">
+				<p class="voice-user" id="voiceUser"></p>
+				<p class="voice-reply" id="voiceReply"></p>
+			</div>
+		</div>
+		<footer class="voice-foot">
+			<div class="segmented" id="voiceModes" role="radiogroup" aria-label="Turn-taking">
+				<button type="button" class="seg" role="radio" data-mode="hands-free" aria-checked="true">Hands-free</button>
+				<button type="button" class="seg" role="radio" data-mode="ptt" aria-checked="false">Tap to talk</button>
+			</div>
+			<button type="button" class="voice-mute" id="voiceMute" aria-pressed="false"><svg><use href="#i-mic"/></svg><span>Mute</span></button>
+		</footer>
+		<div class="voice-scrim" id="voiceScrim" hidden></div>
+		<div class="sheet voice-sheet" id="voiceSheet" role="dialog" aria-modal="true" aria-label="Choose voice" inert>
+			<div class="sheet-grip"></div>
+			<div class="sheet-head">
+				<div class="sheet-title">Voice</div>
+				<button type="button" class="icon-btn" id="voiceSheetClose" aria-label="Close"><svg><use href="#i-x"/></svg></button>
+			</div>
+			<button type="button" class="switch-row" id="voiceTalkOver" role="switch" aria-checked="true">
+				<span class="switch-text"><b>Talk over replies</b><small>Speak to interrupt. If the speaker sets off the microphone, turn this off and tap the orb to interrupt.</small></span>
+				<i class="switch" aria-hidden="true"></i>
+			</button>
+			<div class="segmented" id="voiceFilter" role="radiogroup" aria-label="Language"></div>
+			<div class="voice-list" id="voiceList"></div>
+			<p class="sheet-note">Each preview costs about a tenth of a cent.</p>
+		</div>
 	</div>
 
 	<div class="lock" id="lock" hidden>
