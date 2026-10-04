@@ -172,3 +172,10 @@ test("every model's voice overrides are valid parameters for that model", () => 
 	);
 	for (const m of withOverrides) assert.deepEqual(sanitizeParams(m.voiceParams, m), m.voiceParams, m.id);
 });
+
+test("every model rejects top_p 0, which the service refuses, and accepts 0.001", () => {
+	for (const m of MODELS) {
+		assert.throws(() => toWire(m, { values: { top_p: 0 } }), /top_p must be a number between 0.001 and 1/, m.id);
+		assert.deepEqual(toWire(m, { values: { top_p: 0.001 } }), { top_p: 0.001 }, m.id);
+	}
+});

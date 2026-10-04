@@ -58,7 +58,8 @@ const maxTokens = (context, def = DEFAULT_MAX_TOKENS, extra = {}) => ({
 	min: 1,
 	max: context,
 	default: def,
-	help: `An upper bound for the number of tokens that can be generated, reasoning included. When unset, the app sends ${def}.`,
+	emptyLabel: String(def),
+	help: `An upper bound for the number of tokens that can be generated, reasoning included. When empty, the app sends ${def}.`,
 	...extra,
 });
 const seed = (extra = {}) => ({
@@ -165,12 +166,13 @@ const CHAT_EXTRA_KEYS = [
 	"web_search_options",
 ];
 
-const TOP_P_FLOOR = { min: 0.001, note: "The schema allows 0; the service rejects it." };
+// Every chat model rejects top_p 0 (HTTP 400, 500 on Nemotron), whatever its schema says.
+const TOP_P_FLOOR = { min: 0.001, note: "The service rejects 0." };
 
-const chatControls = (context, reasoning, { topPExtra } = {}) => [
+const chatControls = (context, reasoning) => [
 	...reasoning,
 	temperature(),
-	topP(topPExtra),
+	topP(TOP_P_FLOOR),
 	frequencyPenalty,
 	presencePenalty,
 	maxTokens(context),
@@ -337,7 +339,6 @@ export const MODELS = [
 				enableThinking(),
 				clearThinking,
 			],
-			{ topPExtra: TOP_P_FLOOR },
 		),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
@@ -356,7 +357,6 @@ export const MODELS = [
 					enableThinking({ help: "Reasoning is on by default. This model has no reasoning effort field; use Low effort instead." }),
 					lowEffort,
 				],
-				{ topPExtra: TOP_P_FLOOR },
 			),
 			forceNonemptyContent,
 		],
@@ -394,7 +394,6 @@ export const MODELS = [
 				enableThinking(),
 				clearThinking,
 			],
-			{ topPExtra: TOP_P_FLOOR },
 		),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},

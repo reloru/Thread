@@ -27,6 +27,7 @@ Live: https://thread.reloru.workers.dev
 - Settings (gear in the model picker):
   - Instructions sent as the system message: one text for all chats, optionally replaced per chat.
   - Per-model parameters: reasoning effort and thinking toggles, temperature, top P/K, penalties, max output tokens, stop sequences, seed, response format, logit bias. Ranges and options follow each model's schema, narrowed where the service behaves differently (noted in the panel).
+  - Empty fields, shown as –, are left out of the request and the model uses its own default. Only max output tokens is always sent (some models stop after 256 tokens without it).
   - Advanced JSON: any other schema field for that model (tools, n, logprobs, …), sent as-is. The Worker validates every parameter against the same rules (`public/params.js`).
 - Tools, switched on per chat with the chips above the composer:
   - **Code**: the model runs Python in an isolated Cloudflare Container (one per chat, standard-3: 2 vCPU, 8 GiB RAM; no internet; numpy/pandas/matplotlib/scipy/sympy; 60 s per run). Output and figures appear inline; variables and files persist while the container is awake (it sleeps after 10 idle minutes).

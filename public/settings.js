@@ -3,6 +3,7 @@ import { ParamError, allowedKeys, hasCustom, toWire } from "./params.js";
 const KEY_PARAMS = "thread.params";
 const KEY_INSTRUCTIONS = "thread.instructions";
 const GROUPS = ["Reasoning", "Sampling", "Output"];
+const NOT_SET = "–";
 
 /**
  * Per-model parameter settings and instructions.
@@ -94,6 +95,9 @@ export function createSettings(deps) {
 			nodes.push(instr);
 
 			const values = all[model.id]?.values || {};
+			const unsetNote = hint(`A ${NOT_SET} means the field is left out of the request and the model uses its own default. Max output tokens is the exception: the app always sends a limit, because some models stop after 256 tokens without one.`);
+			unsetNote.classList.add("settings-note");
+			nodes.push(unsetNote);
 			for (const group of GROUPS) {
 				const controls = model.controls.filter((c) => c.group === group);
 				if (!controls.length) continue;
@@ -165,8 +169,8 @@ export function createSettings(deps) {
 		reset.append(icon("i-redo"));
 		const showReset = (on) => reset.classList.toggle("off", !on);
 
-		const defaultText =
-			c.defaultLabel ?? (c.default === undefined ? "Default" : `Default · ${formatOption(c.default)}`);
+		// An empty field is not sent, so the model uses its own default. Fields the app always fills say what they send.
+		const emptyText = c.emptyLabel ?? NOT_SET;
 
 		if (c.type === "number" || c.type === "integer") {
 			const num = el("input", "num");
@@ -176,7 +180,7 @@ export function createSettings(deps) {
 			if (c.min !== undefined) num.min = String(c.min);
 			if (c.max !== undefined) num.max = String(c.max);
 			num.step = c.type === "integer" ? "1" : String(c.step ?? "any");
-			num.placeholder = defaultText;
+			num.placeholder = emptyText;
 			if (value !== undefined) num.value = String(value);
 			head.append(num, reset);
 
@@ -273,6 +277,7 @@ export function createSettings(deps) {
 				const b = el("button", "seg", text);
 				b.type = "button";
 				b.setAttribute("role", "radio");
+				if (v === undefined) b.setAttribute("aria-label", "Not set");
 				b._value = v;
 				b.addEventListener("click", () => {
 					select(v);
@@ -281,12 +286,11 @@ export function createSettings(deps) {
 				buttons.push(b);
 				seg.append(b);
 			};
-			add("Default", undefined);
+			add(NOT_SET, undefined);
 			for (const o of options) add(formatOption(o), o);
 			select(value);
 			label.removeAttribute("for");
 			field.append(seg);
-			if (c.default !== undefined) field.append(hint(`Default: ${formatOption(c.default)}`));
 		} else {
 			const area = textarea(id, 2, c.type === "stop" ? "One per line" : '{"1234": -100}');
 			if (c.type === "bias") {
@@ -299,7 +303,9 @@ export function createSettings(deps) {
 			field.append(area);
 		}
 
-		if (c.help) field.append(hint(c.help));
+		const modelDefault = c.default === undefined || c.emptyLabel ? "" : `Model default: ${formatOption(c.default)}.`;
+		const text = [c.help, modelDefault].filter(Boolean).join(" ");
+		if (text) field.append(hint(text));
 		if (c.note) field.append(el("p", "note", c.note));
 		field.append(error);
 		return field;

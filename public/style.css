@@ -825,6 +825,7 @@ svg {
 .set-text::placeholder { color: var(--faint); }
 .set-text.mono { font-family: var(--mono); }
 
+.settings-note { margin: 12px 0 0; padding-bottom: 4px; }
 .hint { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 .note { margin: 6px 0 0; color: color-mix(in srgb, var(--accent) 75%, var(--text)); font-size: 13px; line-height: 1.45; }
 .field-error { margin: 6px 0 0; color: var(--danger); font-size: 13px; }
