@@ -12,6 +12,10 @@ const LLAMA = byId("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
 const QWEN = byId("@cf/qwen/qwen3.8-27b");
 const NEMOTRON = byId("@cf/nvidia/nemotron-3-120b-a12b");
 const DEEPSEEK_PRO = byId("@cf/deepseek-ai/deepseek-v4-pro-0813");
+const GRANITE = byId("@cf/ibm-granite/granite-4.0-h-micro");
+const MISTRAL = byId("@cf/mistralai/mistral-small-3.1-24b-instruct");
+const OSS20 = byId("@cf/openai/gpt-oss-20b");
+const KIMI_CODE = byId("@cf/moonshotai/kimi-k2.7-code");
 
 test("every model's controls have unique keys and valid groups", () => {
 	for (const m of MODELS) {
@@ -160,7 +164,14 @@ test("Llama 3.3 70B follows its legacy schema and the limits the service enforce
 test("only the models with a vision input accept images", () => {
 	assert.deepEqual(
 		MODELS.filter((m) => m.vision).map((m) => m.id).sort(),
-		["@cf/google/gemma-4-26b-a4b-it", "@cf/moonshotai/kimi-k2.6", "@cf/qwen/qwen3.8-27b", "@cf/zai-org/glm-5.3-flash"],
+		[
+			"@cf/google/gemma-4-26b-a4b-it",
+			"@cf/mistralai/mistral-small-3.1-24b-instruct",
+			"@cf/moonshotai/kimi-k2.6",
+			"@cf/moonshotai/kimi-k2.7-code",
+			"@cf/qwen/qwen3.8-27b",
+			"@cf/zai-org/glm-5.3-flash",
+		],
 	);
 });
 
@@ -178,4 +189,60 @@ test("every model rejects top_p 0, which the service refuses, and accepts 0.001"
 		assert.throws(() => toWire(m, { values: { top_p: 0 } }), /top_p must be a number between 0.001 and 1/, m.id);
 		assert.deepEqual(toWire(m, { values: { top_p: 0.001 } }), { top_p: 0.001 }, m.id);
 	}
+});
+
+test("Granite 4.0 Micro: older schema, temperature up to 5, no logit bias, no text response format", () => {
+	assert.deepEqual(toWire(GRANITE, { values: { temperature: 5, top_k: 50, seed: 1, frequency_penalty: -2, repetition_penalty: 2 } }), {
+		temperature: 5,
+		top_k: 50,
+		seed: 1,
+		frequency_penalty: -2,
+		repetition_penalty: 2,
+	});
+	assert.throws(() => toWire(GRANITE, { values: { temperature: 5.1 } }), /between 0 and 5/);
+	assert.throws(() => sanitizeParams({ logit_bias: { 1: 1 } }, GRANITE), /logit_bias is not a parameter of Granite 4.0 Micro/);
+	assert.throws(() => sanitizeParams({ reasoning_effort: "low" }, GRANITE), /not a parameter/);
+	assert.throws(() => toWire(GRANITE, { values: { response_format: "text" } }), /type must be one of json_object, json_schema/);
+	assert.throws(() => toWire(GRANITE, { values: { seed: 0 } }), /between 1 and 9999999999/);
+	assert.throws(() => toWire(GRANITE, { values: { max_completion_tokens: 131001 } }), /between 1 and 131000/);
+	assert.deepEqual(toWire(GRANITE, { values: { stop: "END" } }), { stop: ["END"] });
+});
+
+test("Mistral Small 3.1: penalties start at 0, text and JSON response formats, temperature up to 5", () => {
+	assert.throws(() => toWire(MISTRAL, { values: { frequency_penalty: -0.5 } }), /between 0 and 2/);
+	assert.throws(() => toWire(MISTRAL, { values: { presence_penalty: -0.5 } }), /between 0 and 2/);
+	assert.deepEqual(toWire(MISTRAL, { values: { frequency_penalty: 0.5, temperature: 5, response_format: "text" } }), {
+		frequency_penalty: 0.5,
+		temperature: 5,
+		response_format: { type: "text" },
+	});
+	assert.throws(() => toWire(MISTRAL, { values: { top_p: 0 } }), /between 0.001 and 1/);
+	assert.throws(() => toWire(MISTRAL, { values: { top_p: 1.5 } }), /between 0.001 and 1/);
+	assert.throws(() => sanitizeParams({ logit_bias: { 1: 1 } }, MISTRAL), /not a parameter/);
+});
+
+test("gpt-oss-20b: same controls as the 120b, but the service accepts temperature up to 5", () => {
+	assert.deepEqual(toWire(OSS20, { values: { reasoning_effort: "low", temperature: 5, logit_bias: '{"7": -5}' } }), {
+		reasoning_effort: "low",
+		temperature: 5,
+		logit_bias: { 7: -5 },
+	});
+	assert.throws(() => toWire(OSS20, { values: { reasoning_effort: "none" } }), /one of low, medium, high/);
+	assert.throws(() => toWire(OSS20, { values: { response_format: "text" } }), /type must be one of json_object, json_schema/);
+	assert.throws(() => sanitizeParams({ chat_template_kwargs: {} }, OSS20), /not a parameter/);
+	assert.deepEqual(
+		OSS20.controls.map((c) => c.key).filter((k) => k !== "temperature"),
+		byId("@cf/openai/gpt-oss-120b").controls.map((c) => c.key).filter((k) => k !== "temperature"),
+	);
+});
+
+test("Kimi K2.7 Code: reasoning is always on, effort none is not offered", () => {
+	assert.deepEqual(toWire(KIMI_CODE, { values: { reasoning_effort: "low", clear_thinking: true } }), {
+		reasoning_effort: "low",
+		chat_template_kwargs: { clear_thinking: true },
+	});
+	for (const level of ["max", "high", "medium", "low"]) assert.deepEqual(toWire(KIMI_CODE, { values: { reasoning_effort: level } }), { reasoning_effort: level });
+	for (const level of ["none", "minimal", "xhigh"]) assert.throws(() => toWire(KIMI_CODE, { values: { reasoning_effort: level } }), /one of max, high, medium, low/);
+	assert.throws(() => sanitizeParams({ chat_template_kwargs: { enable_thinking: false } }, KIMI_CODE), /enable_thinking is not supported/);
+	assert.equal(KIMI_CODE.voiceParams, undefined);
 });

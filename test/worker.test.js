@@ -353,3 +353,17 @@ test("voice mode rejects a malformed voice field", async () => {
 	}
 	assert.equal(calls.length, 0);
 });
+
+test("images reach the new vision models and become a note for Granite", async () => {
+	const { env, calls } = makeEnv();
+	const body = (model) => ({
+		model,
+		messages: [{ role: "user", content: [{ type: "text", text: "what?" }, { type: "image_url", image_url: { url: IMG } }] }],
+	});
+	for (const model of ["@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/moonshotai/kimi-k2.7-code", "@cf/ibm-granite/granite-4.0-h-micro"]) {
+		await worker.fetch(req("/api/chat", { method: "POST", body: body(model) }), env);
+	}
+	assert.deepEqual(calls[0].input.messages[0].content[1], { type: "image_url", image_url: { url: IMG } });
+	assert.deepEqual(calls[1].input.messages[0].content[1], { type: "image_url", image_url: { url: IMG } });
+	assert.match(calls[2].input.messages[0].content, /^what\?\n\n\[An image was attached/);
+});

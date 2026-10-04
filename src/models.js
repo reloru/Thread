@@ -182,6 +182,49 @@ const chatControls = (context, reasoning) => [
 	logitBias,
 ];
 
+// Controls for models on the older Workers AI schema (top_k and repetition_penalty instead of the
+// OpenAI-style extras), which differ per model in the ranges below.
+const olderControls = ({ reasoning = [], temp, penalties = [frequencyPenalty, presencePenalty], max, formats = ["json_object"], bias = [] }) => [
+	...reasoning,
+	temperature({
+		default: 0.6,
+		help: "Controls the randomness of the output; higher values produce more random results.",
+		...temp,
+	}),
+	topP({
+		min: 0.001,
+		default: undefined,
+		help: "Lower values make outputs more predictable; higher values allow for more varied responses.",
+	}),
+	{
+		key: "top_k",
+		label: "Top K",
+		group: "Sampling",
+		type: "integer",
+		min: 1,
+		max: 50,
+		help: "Limits the model to choose from the top k most probable tokens.",
+	},
+	...penalties,
+	{
+		key: "repetition_penalty",
+		label: "Repetition penalty",
+		group: "Sampling",
+		type: "number",
+		min: 0,
+		max: 2,
+		step: 0.05,
+		help: "Penalty for repeated tokens; higher values discourage repetition.",
+	},
+	max,
+	stop,
+	seed({ min: 1, max: 9999999999, help: "Random seed for reproducibility of the generation." }),
+	responseFormat(formats),
+	...bias,
+];
+
+const OLDER_EXTRA_KEYS = ["functions", "max_tokens", "raw", "tools"];
+
 export const MODELS = [
 	{
 		id: "@cf/zai-org/glm-5.3-flash",
@@ -211,6 +254,34 @@ export const MODELS = [
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
+		id: "@cf/ibm-granite/granite-4.0-h-micro",
+		name: "Granite 4.0 Micro",
+		vendor: "IBM",
+		vision: false,
+		context: 131000,
+		price: [0.017, 0.112],
+		controls: olderControls({
+			temp: { max: 5, note: "The service accepts up to 5, but output was unusable above about 2 in testing." },
+			max: maxTokens(131000),
+		}),
+		extraKeys: OLDER_EXTRA_KEYS,
+	},
+	{
+		id: "@cf/openai/gpt-oss-20b",
+		name: "gpt-oss-20b",
+		vendor: "OpenAI",
+		vision: false,
+		context: 128000,
+		price: [0.2, 0.3],
+		controls: olderControls({
+			reasoning: [reasoningEffort(["low", "medium", "high"], "medium", { help: "Reasoning cannot be disabled for this model." })],
+			temp: { max: 5, note: "The service accepts up to 5, but output was unusable above about 2 in testing." },
+			max: maxTokens(128000),
+			bias: [logitBias],
+		}),
+		extraKeys: OLDER_EXTRA_KEYS,
+	},
+	{
 		id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 		name: "Llama 3.3 70B",
 		vendor: "Meta",
@@ -218,46 +289,13 @@ export const MODELS = [
 		context: 24000,
 		price: [0.293, 2.253],
 		defaultMaxTokens: 4096,
-		controls: [
-			temperature({
-				default: 0.6,
-				help: "Controls the randomness of the output; higher values produce more random results.",
-				note: "The schema allows up to 5; the service rejects values above 2.",
-			}),
-			topP({
-				min: 0.001,
-				default: undefined,
-				help: "Lower values make outputs more predictable; higher values allow for more varied responses.",
-			}),
-			{
-				key: "top_k",
-				label: "Top K",
-				group: "Sampling",
-				type: "integer",
-				min: 1,
-				max: 50,
-				help: "Limits the model to choose from the top k most probable tokens.",
-			},
-			frequencyPenalty,
-			presencePenalty,
-			{
-				key: "repetition_penalty",
-				label: "Repetition penalty",
-				group: "Sampling",
-				type: "number",
-				min: 0,
-				max: 2,
-				step: 0.05,
-				help: "Penalty for repeated tokens; higher values discourage repetition.",
-			},
-			maxTokens(24000, 4096, {
+		controls: olderControls({
+			temp: { note: "The schema allows up to 5; the service rejects values above 2." },
+			max: maxTokens(24000, 4096, {
 				note: "The prompt and the output together must fit in the 24,000-token context window; the service rejects a request otherwise.",
 			}),
-			stop,
-			seed({ min: 1, max: 9999999999, help: "Random seed for reproducibility of the generation." }),
-			responseFormat(["json_object"]),
-		],
-		extraKeys: ["functions", "max_tokens", "raw", "tools"],
+		}),
+		extraKeys: OLDER_EXTRA_KEYS,
 	},
 	{
 		id: "@cf/openai/gpt-oss-120b",
@@ -266,46 +304,31 @@ export const MODELS = [
 		vision: false,
 		context: 128000,
 		price: [0.35, 0.75],
-		controls: [
-			reasoningEffort(["low", "medium", "high"], "medium", { help: "Reasoning cannot be disabled for this model." }),
-			temperature({
-				default: 0.6,
-				help: "Controls the randomness of the output; higher values produce more random results.",
-				note: "The schema allows up to 5; the service rejects values above 2.",
-			}),
-			topP({
-				min: 0.001,
-				default: undefined,
-				help: "Lower values make outputs more predictable; higher values allow for more varied responses.",
-			}),
-			{
-				key: "top_k",
-				label: "Top K",
-				group: "Sampling",
-				type: "integer",
-				min: 1,
-				max: 50,
-				help: "Limits the model to choose from the top k most probable tokens.",
-			},
-			frequencyPenalty,
-			presencePenalty,
-			{
-				key: "repetition_penalty",
-				label: "Repetition penalty",
-				group: "Sampling",
-				type: "number",
-				min: 0,
-				max: 2,
-				step: 0.05,
-				help: "Penalty for repeated tokens; higher values discourage repetition.",
-			},
-			maxTokens(128000),
-			stop,
-			seed({ min: 1, max: 9999999999, help: "Random seed for reproducibility of the generation." }),
-			responseFormat(["json_object"]),
-			logitBias,
-		],
-		extraKeys: ["functions", "max_tokens", "raw", "tools"],
+		controls: olderControls({
+			reasoning: [reasoningEffort(["low", "medium", "high"], "medium", { help: "Reasoning cannot be disabled for this model." })],
+			temp: { note: "The schema allows up to 5; the service rejects values above 2." },
+			max: maxTokens(128000),
+			bias: [logitBias],
+		}),
+		extraKeys: OLDER_EXTRA_KEYS,
+	},
+	{
+		id: "@cf/mistralai/mistral-small-3.1-24b-instruct",
+		name: "Mistral Small 3.1",
+		vendor: "Mistral AI",
+		vision: true,
+		context: 128000,
+		price: [0.351, 0.555],
+		controls: olderControls({
+			temp: { max: 5, default: 0.15, note: "The service accepts up to 5, but output was unusable above about 2 in testing." },
+			penalties: [
+				{ ...frequencyPenalty, min: 0, note: "This model rejects negative values." },
+				{ ...presencePenalty, min: 0, note: "This model rejects negative values." },
+			],
+			max: maxTokens(128000),
+			formats: ["text", "json_object"],
+		}),
+		extraKeys: OLDER_EXTRA_KEYS,
 	},
 	{
 		id: "@cf/deepseek-ai/deepseek-v4-flash-0731",
@@ -373,6 +396,22 @@ export const MODELS = [
 		controls: chatControls(262144, [
 			reasoningEffort(["high", "none"], "high", { help: "“none” disables reasoning." }),
 			enableThinking({ note: "In testing, turning this off did not stop reasoning. Use effort “none”." }),
+			clearThinking,
+		]),
+		extraKeys: CHAT_EXTRA_KEYS,
+	},
+	{
+		id: "@cf/moonshotai/kimi-k2.7-code",
+		name: "Kimi K2.7 Code",
+		vendor: "Moonshot AI",
+		vision: true,
+		context: 262144,
+		price: [0.95, 4],
+		controls: chatControls(262144, [
+			reasoningEffort(["max", "high", "medium", "low"], undefined, {
+				help: "Reasoning is always on for this model.",
+				note: "“none” is not offered: the reasoning then appears in the reply text. The Thinking toggle has no effect.",
+			}),
 			clearThinking,
 		]),
 		extraKeys: CHAT_EXTRA_KEYS,
