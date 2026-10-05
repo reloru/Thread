@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_ROUNDS, agentStream, relay, sanitizeTools } from "../src/agent.js";
+import { MAX_ROUNDS, agentStream, reasoningAsContent, relay, sanitizeTools } from "../src/agent.js";
 
 const sse = (events) =>
 	new ReadableStream({
@@ -135,4 +135,43 @@ test("model failures become an error event", async () => {
 	const env = { AI: { run: async () => { throw new Error("3040: capacity"); } } };
 	const events = await collect(agentStream({ env, tools: ["web"], ...base }));
 	assert.match(events[0].error, /3040/);
+});
+
+test("reasoningAsContent moves reasoning into content and leaves other lines unchanged", async () => {
+	const usage = '{"response":"","usage":{"prompt_tokens":3,"completion_tokens":2}}';
+	const text = [
+		'data: {"choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}',
+		'data: {"choices":[{"index":0,"delta":{"reasoning":"Hel"}}]}',
+		'data: {"choices":[{"index":0,"delta":{"reasoning_content":"lo","content":null}}]}',
+		`data: ${usage}`,
+		"data: [DONE]",
+		"",
+	].join("\n\n");
+	const bytes = new TextEncoder().encode(text);
+	// Split inside events to exercise buffering.
+	const chunks = [bytes.slice(0, 70), bytes.slice(70, 101), bytes.slice(101)];
+	const stream = new ReadableStream({
+		start(c) {
+			for (const chunk of chunks) c.enqueue(chunk);
+			c.close();
+		},
+	});
+	const out = await new Response(reasoningAsContent(stream)).text();
+	const lines = out.split("\n\n");
+	assert.equal(lines[0], 'data: {"choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}');
+	assert.deepEqual(JSON.parse(lines[1].slice(6)).choices[0].delta, { content: "Hel" });
+	assert.deepEqual(JSON.parse(lines[2].slice(6)).choices[0].delta, { content: "lo" });
+	assert.equal(lines[3], `data: ${usage}`);
+	assert.equal(lines[4], "data: [DONE]");
+});
+
+test("the tool loop applies reasoningAsContent when asked", async () => {
+	const reasoningAnswer = [delta({ reasoning: "It is 42." }), delta({}, "stop"), "[DONE]"];
+	for (const asContent of [true, false]) {
+		const { env } = makeEnv([toolCall("run_python", '{"code":"1"}'), reasoningAnswer]);
+		const events = await collect(agentStream({ env, tools: ["python"], ...base, asContent }));
+		const deltas = events.filter((e) => e.choices).map((e) => e.choices[0].delta);
+		assert.equal(deltas.some((d) => d.content === "It is 42."), asContent);
+		assert.equal(deltas.some((d) => d.reasoning === "It is 42."), !asContent);
+	}
 });

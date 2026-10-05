@@ -116,15 +116,6 @@ const enableThinking = (extra = {}) => ({
 // Only models with a verified way to switch reasoning off have one.
 const THINKING_OFF = { chat_template_kwargs: { enable_thinking: false } };
 
-const clearThinking = {
-	key: "clear_thinking",
-	path: "chat_template_kwargs",
-	label: "Clear thinking",
-	group: "Reasoning",
-	type: "boolean",
-	default: false,
-	help: "If false, preserves reasoning context between turns.",
-};
 const lowEffort = {
 	key: "low_effort",
 	path: "chat_template_kwargs",
@@ -133,15 +124,6 @@ const lowEffort = {
 	type: "boolean",
 	default: false,
 	help: "When Thinking is on, use Nemotron's low-effort reasoning mode, which uses significantly fewer reasoning tokens.",
-};
-const forceNonemptyContent = {
-	key: "force_nonempty_content",
-	path: "chat_template_kwargs",
-	label: "Force non-empty content",
-	group: "Output",
-	type: "boolean",
-	default: false,
-	help: "Cloudflare's docs: NVIDIA suggests turning this on for coding agents.",
 };
 
 // Schema fields of the OpenAI-compatible chat models that have no dedicated control.
@@ -169,7 +151,8 @@ const CHAT_EXTRA_KEYS = [
 // Every chat model rejects top_p 0 (HTTP 400, 500 on Nemotron), whatever its schema says.
 const TOP_P_FLOOR = { min: 0.001, note: "The service rejects 0." };
 
-const chatControls = (context, reasoning) => [
+// options.seed = false leaves seed out for models where repeated runs with the same seed did not match.
+const chatControls = (context, reasoning, options = {}) => [
 	...reasoning,
 	temperature(),
 	topP(TOP_P_FLOOR),
@@ -177,14 +160,14 @@ const chatControls = (context, reasoning) => [
 	presencePenalty,
 	maxTokens(context),
 	stop,
-	seed(),
-	responseFormat(["text", "json_object"]),
+	...(options.seed === false ? [] : [seed()]),
+	responseFormat(["json_object"]),
 	logitBias,
 ];
 
 // Controls for models on the older Workers AI schema (top_k and repetition_penalty instead of the
 // OpenAI-style extras), which differ per model in the ranges below.
-const olderControls = ({ reasoning = [], temp, penalties = [frequencyPenalty, presencePenalty], max, formats = ["json_object"], bias = [] }) => [
+const olderControls = ({ reasoning = [], temp, penalties = [frequencyPenalty, presencePenalty], repetition = {}, max, formats = ["json_object"], bias = [] }) => [
 	...reasoning,
 	temperature({
 		default: 0.6,
@@ -211,15 +194,17 @@ const olderControls = ({ reasoning = [], temp, penalties = [frequencyPenalty, pr
 		label: "Repetition penalty",
 		group: "Sampling",
 		type: "number",
-		min: 0,
+		// The service rejects 0.
+		min: 0.05,
 		max: 2,
 		step: 0.05,
 		help: "Penalty for repeated tokens; higher values discourage repetition.",
+		...repetition,
 	},
 	max,
 	stop,
 	seed({ min: 1, max: 9999999999, help: "Random seed for reproducibility of the generation." }),
-	responseFormat(formats),
+	...(formats.length ? [responseFormat(formats)] : []),
 	...bias,
 ];
 
@@ -233,10 +218,11 @@ export const MODELS = [
 		vision: true,
 		context: 1048576,
 		price: [0.15, 0.5],
-		controls: chatControls(1048576, [
-			reasoningEffort(["max", "high", "low"], "max", { help: "Reasoning cannot be disabled for this model." }),
-			clearThinking,
-		]),
+		controls: chatControls(
+			1048576,
+			[reasoningEffort(["max", "high", "low"], "max", { help: "Reasoning cannot be disabled for this model." })],
+			{ seed: false },
+		),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
@@ -247,10 +233,7 @@ export const MODELS = [
 		context: 256000,
 		price: [0.1, 0.3],
 		voiceParams: THINKING_OFF,
-		controls: [
-			...chatControls(256000, [enableThinking(), clearThinking]),
-			{ key: "skip_special_tokens", label: "Skip special tokens", group: "Output", type: "boolean", default: false },
-		],
+		controls: chatControls(256000, [enableThinking()], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
@@ -275,9 +258,12 @@ export const MODELS = [
 		price: [0.2, 0.3],
 		controls: olderControls({
 			reasoning: [reasoningEffort(["low", "medium", "high"], "medium", { help: "Reasoning cannot be disabled for this model." })],
-			temp: { max: 5, note: "The service accepts up to 5, but output was unusable above about 2 in testing." },
+			// Outside these limits replies came back empty or as garbage with leaked format tokens.
+			temp: { max: 1 },
+			repetition: { min: 0.7 },
 			max: maxTokens(128000),
-			bias: [logitBias],
+			formats: [],
+			bias: [{ ...logitBias, max: 30, help: "Maps token IDs to bias values from -100 to 30, as JSON." }],
 		}),
 		extraKeys: OLDER_EXTRA_KEYS,
 	},
@@ -306,7 +292,9 @@ export const MODELS = [
 		price: [0.35, 0.75],
 		controls: olderControls({
 			reasoning: [reasoningEffort(["low", "medium", "high"], "medium", { help: "Reasoning cannot be disabled for this model." })],
-			temp: { note: "The schema allows up to 5; the service rejects values above 2." },
+			// Outside these limits replies came back empty, as garbage with leaked format tokens, or as a stream error.
+			temp: { max: 1.2 },
+			repetition: { min: 0.7 },
 			max: maxTokens(128000),
 			bias: [logitBias],
 		}),
@@ -326,7 +314,6 @@ export const MODELS = [
 				{ ...presencePenalty, min: 0, note: "This model rejects negative values." },
 			],
 			max: maxTokens(128000),
-			formats: ["text", "json_object"],
 		}),
 		extraKeys: OLDER_EXTRA_KEYS,
 	},
@@ -338,13 +325,11 @@ export const MODELS = [
 		context: 1048576,
 		price: [0.44, 1.32],
 		voiceParams: THINKING_OFF,
-		controls: chatControls(1048576, [
-			reasoningEffort(["max", "high", "low", "none"], "high", {
-				note: "In testing, “none” still produced reasoning. Turn Thinking off to disable it.",
-			}),
-			enableThinking(),
-			clearThinking,
-		]),
+		controls: chatControls(
+			1048576,
+			[reasoningEffort(["max", "high", "low"], "high", { help: "Turn Thinking off to disable reasoning." }), enableThinking()],
+			{ seed: false },
+		),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
@@ -360,7 +345,6 @@ export const MODELS = [
 			[
 				reasoningEffort(["xhigh", "medium", "low"], "xhigh", { help: "Turn Thinking off to disable reasoning." }),
 				enableThinking(),
-				clearThinking,
 			],
 		),
 		extraKeys: CHAT_EXTRA_KEYS,
@@ -373,16 +357,15 @@ export const MODELS = [
 		context: 256000,
 		price: [0.5, 1.5],
 		voiceParams: THINKING_OFF,
-		controls: [
-			...chatControls(
-				256000,
-				[
-					enableThinking({ help: "Reasoning is on by default. This model has no reasoning effort field; use Low effort instead." }),
-					lowEffort,
-				],
-			),
-			forceNonemptyContent,
-		],
+		// With Thinking off the service streams the reply in the reasoning field; the Worker moves it into content.
+		replyInReasoningWhenThinkingOff: true,
+		controls: chatControls(
+			256000,
+			[
+				enableThinking({ help: "Reasoning is on by default. This model has no reasoning effort field; use Low effort instead." }),
+				lowEffort,
+			],
+		),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
@@ -393,11 +376,7 @@ export const MODELS = [
 		context: 262144,
 		price: [0.95, 4],
 		voiceParams: { reasoning_effort: "none" },
-		controls: chatControls(262144, [
-			reasoningEffort(["high", "none"], "high", { help: "“none” disables reasoning." }),
-			enableThinking({ note: "In testing, turning this off did not stop reasoning. Use effort “none”." }),
-			clearThinking,
-		]),
+		controls: chatControls(262144, [reasoningEffort(["high", "none"], "high", { help: "“none” disables reasoning." })], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
@@ -407,13 +386,7 @@ export const MODELS = [
 		vision: true,
 		context: 262144,
 		price: [0.95, 4],
-		controls: chatControls(262144, [
-			reasoningEffort(["max", "high", "medium", "low"], undefined, {
-				help: "Reasoning is always on for this model.",
-				note: "“none” is not offered: the reasoning then appears in the reply text. The Thinking toggle has no effect.",
-			}),
-			clearThinking,
-		]),
+		controls: chatControls(262144, [], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
@@ -426,13 +399,8 @@ export const MODELS = [
 		voiceParams: THINKING_OFF,
 		controls: chatControls(
 			1048576,
-			[
-				reasoningEffort(["max", "high", "low", "none"], "high", {
-					note: "In testing, “none” still produced reasoning. Turn Thinking off to disable it.",
-				}),
-				enableThinking(),
-				clearThinking,
-			],
+			[reasoningEffort(["max", "high", "low"], "high", { help: "Turn Thinking off to disable reasoning." }), enableThinking()],
+			{ seed: false },
 		),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
@@ -443,10 +411,11 @@ export const MODELS = [
 		vision: false,
 		context: 1048576,
 		price: [1.4, 4.4],
-		controls: chatControls(1048576, [
-			reasoningEffort(["max", "high", "low"], "max", { help: "Reasoning cannot be disabled for this model." }),
-			clearThinking,
-		]),
+		controls: chatControls(
+			1048576,
+			[reasoningEffort(["max", "high", "low"], "max", { help: "Reasoning cannot be disabled for this model." })],
+			{ seed: false },
+		),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 ];
