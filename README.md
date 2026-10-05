@@ -43,6 +43,7 @@ Live: https://thread.reloru.workers.dev
   - Speech: Aura-2, one request per sentence ($0.03 per 1000 characters). The service rejects text over 2000 characters and takes longer the more text it gets.
   - Voices: the 50 that Workers AI serves, 40 English (`aura-2-en`) and 10 Spanish (`aura-2-es`), each with a preview. Deepgram's own table lists more (for example selene); the service rejects them.
   - Hands-free mode, where speaking over a reply interrupts it (it takes 240 ms of voiced audio within half a second, so a cough does not; turn it off in the voice picker if the speaker sets off the microphone), or tap to talk.
+  - On iPhone and iPad the microphone closes while a reply plays and the page asks for a "playback" audio session, so replies use the speaker and ignore the silent switch. With the microphone open, iOS uses a "play-and-record" session that can send replies to the earpiece or silence them. Talk-over needs the open microphone, so it is off by default there and can be turned on in the voice picker.
   - Voice requests turn thinking off where a way is verified (Gemma, DeepSeek, Qwen, Nemotron: Thinking off; Kimi: effort none), add a spoken-style instruction in the language of the voice, and keep only the spoken part of a reply you interrupt.
 - Chat history and settings are stored on the device (IndexedDB and localStorage). Nothing is stored server-side.
 - Requests go straight to Workers AI. To route them through an AI Gateway for logs and analytics, set `AI_GATEWAY_ID` in `wrangler.jsonc` to the gateway's ID.
