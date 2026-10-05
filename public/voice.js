@@ -3,7 +3,12 @@ import { createChunker } from "./speech.js";
 
 const KEY_VOICE = "thread.voice";
 const KEY_MODE = "thread.voiceMode";
-const KEY_TALK_OVER = "thread.voiceTalkOver";
+// On iPhone and iPad an open microphone puts the page in a "play-and-record" audio session, which can send
+// replies to the earpiece or silence them. There the microphone closes while a reply plays, unless the user
+// turns talk-over on, so iOS keeps its own setting with talk-over off by default.
+const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const KEY_TALK_OVER = IOS ? "thread.voiceTalkOver.ios" : "thread.voiceTalkOver";
+const MIC_CONSTRAINTS = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } };
 
 const LANGUAGES = { en: "English", es: "Español" };
 const PREVIEW = {
@@ -26,7 +31,16 @@ const LABELS = {
 	thinking: "Thinking…",
 	speaking: "Speaking",
 	idle: "Tap to talk",
+	micIdle: "Tap to listen",
 };
+
+// Audio Session API (Safari 17+): "playback" uses the speaker and ignores the silent switch; "auto" lets the
+// browser choose, which is "play-and-record" while the microphone is open.
+function setAudioSession(type) {
+	try {
+		if (navigator.audioSession && navigator.audioSession.type !== type) navigator.audioSession.type = type;
+	} catch {}
+}
 
 const cap = (text) => text[0].toUpperCase() + text.slice(1);
 
@@ -68,7 +82,7 @@ export function createVoice(deps) {
 	const prefs = {
 		voice: storage.get(KEY_VOICE),
 		mode: storage.get(KEY_MODE) === "ptt" ? "ptt" : "hands-free",
-		talkOver: storage.get(KEY_TALK_OVER) !== "0",
+		talkOver: IOS ? storage.get(KEY_TALK_OVER) === "1" : storage.get(KEY_TALK_OVER) !== "0",
 	};
 	const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 	let config = null;
@@ -140,6 +154,10 @@ export function createVoice(deps) {
 			analyser,
 			analyserData: new Float32Array(analyser.fftSize),
 			stream: null,
+			source: null,
+			tap: null,
+			micBusy: null,
+			micBlocked: false,
 			nodes: [],
 			resampler: null,
 			pending: new Float32Array(0),
@@ -172,39 +190,102 @@ export function createVoice(deps) {
 	}
 
 	async function start(sess) {
-		const [data, , stream] = await Promise.all([
-			loadConfig(),
-			sess.ctx.audioWorklet.addModule("/voice-worklet.js"),
-			navigator.mediaDevices.getUserMedia({
-				audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-			}),
-		]);
-		if (sess.closed) {
-			stream.getTracks().forEach((t) => t.stop());
-			return;
-		}
-		if (sess.ctx.state !== "running") await sess.ctx.resume();
-		sess.stream = stream;
+		const [data] = await Promise.all([loadConfig(), sess.ctx.audioWorklet.addModule("/voice-worklet.js")]);
+		if (sess.closed) return;
 		sess.resampler = new Resampler(sess.ctx.sampleRate);
 		sess.seg.maxFrames = Math.round((data.maxUtteranceSeconds * 1000) / FRAME_MS);
-
-		const source = sess.ctx.createMediaStreamSource(stream);
 		const tap = new AudioWorkletNode(sess.ctx, "thread-tap");
 		tap.port.onmessage = (e) => onSamples(sess, e.data);
 		const silent = sess.ctx.createGain();
 		silent.gain.value = 0;
-		source.connect(tap);
 		tap.connect(silent);
 		silent.connect(sess.ctx.destination);
-		sess.nodes.push(source, tap, silent);
-		stream.getAudioTracks()[0]?.addEventListener("ended", () => {
-			if (s !== sess) return;
-			toast("The microphone stopped");
-			close();
-		});
+		sess.tap = tap;
+		sess.nodes.push(tap, silent);
+		// iOS can suspend or interrupt the context when the audio session changes; bring it back.
+		sess.ctx.onstatechange = () => {
+			if (s === sess && sess.ctx.state !== "running" && sess.ctx.state !== "closed") sess.ctx.resume().catch(() => {});
+		};
+		await openMic(sess);
+		if (sess.closed) return;
+		if (sess.ctx.state !== "running") await sess.ctx.resume();
 		keepAwake(sess);
 		ui.chipName.textContent = cap(prefs.voice);
 		setState(sess, prefs.mode === "ptt" ? "idle" : "listening");
+	}
+
+	/* ---------- Microphone ---------- */
+
+	// With half duplex the microphone is closed while a reply plays, so iOS plays it through the speaker.
+	const halfDuplex = () => IOS && !prefs.talkOver;
+
+	function micWanted(sess) {
+		if (sess.closed || sess.state === "starting") return false;
+		if (!halfDuplex()) return true;
+		return !sess.paused && !sess.muted && sess.state !== "thinking" && sess.state !== "speaking";
+	}
+
+	async function openMic(sess) {
+		if (sess.stream) return;
+		setAudioSession("auto");
+		const stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+		if (sess.closed || sess.stream) {
+			stream.getTracks().forEach((t) => t.stop());
+			return;
+		}
+		sess.stream = stream;
+		sess.micBlocked = false;
+		sess.pending = new Float32Array(0);
+		// A reopened microphone learns the room's noise floor again before speech can start.
+		sess.seg.vad.recent = [];
+		sess.seg.vad.seen = 0;
+		stream.getAudioTracks().forEach((t) => (t.enabled = !sess.muted));
+		sess.source = sess.ctx.createMediaStreamSource(stream);
+		sess.source.connect(sess.tap);
+		stream.getAudioTracks()[0]?.addEventListener("ended", () => {
+			if (s !== sess || sess.stream !== stream) return;
+			toast("The microphone stopped");
+			close();
+		});
+	}
+
+	function closeMic(sess) {
+		const stream = sess.stream;
+		if (!stream) return;
+		sess.stream = null;
+		try {
+			sess.source?.disconnect();
+		} catch {}
+		sess.source = null;
+		stream.getTracks().forEach((t) => t.stop());
+		sess.micLevel = 0;
+		if (halfDuplex()) setAudioSession("playback");
+	}
+
+	// Opens or closes the microphone to match the state; runs after every state change.
+	function syncMic(sess) {
+		if (sess.closed || sess.micBusy) return;
+		const want = micWanted(sess);
+		if (!want) {
+			closeMic(sess);
+			if (halfDuplex() && !sess.stream) setAudioSession("playback");
+			return;
+		}
+		// After a refusal, wait for a tap on the orb instead of retrying on every state change.
+		if (sess.stream || sess.micBlocked) return;
+		sess.micBusy = openMic(sess)
+			.catch((err) => {
+				if (s !== sess) return;
+				// Some browsers only reopen the microphone from a tap; the orb asks for one.
+				sess.micBlocked = true;
+				console.error("microphone reopen failed", err);
+			})
+			.finally(() => {
+				sess.micBusy = null;
+				if (s !== sess) return;
+				render();
+				if (!sess.micBlocked && micWanted(sess) !== Boolean(sess.stream)) syncMic(sess);
+			});
 	}
 
 	async function keepAwake(sess) {
@@ -239,6 +320,10 @@ export function createVoice(deps) {
 		clearTimeout(sess.forceTimer);
 		stopPreview(sess);
 		sess.stream?.getTracks().forEach((t) => t.stop());
+		sess.stream = null;
+		try {
+			sess.source?.disconnect();
+		} catch {}
 		for (const node of sess.nodes) {
 			try {
 				node.disconnect();
@@ -246,6 +331,7 @@ export function createVoice(deps) {
 		}
 		sess.ctx.close().catch(() => {});
 		sess.wake?.release().catch(() => {});
+		setAudioSession("auto");
 		hide();
 	}
 
@@ -270,6 +356,7 @@ export function createVoice(deps) {
 	function setState(sess, state) {
 		if (s !== sess) return;
 		sess.state = state;
+		syncMic(sess);
 		render();
 	}
 
@@ -289,11 +376,17 @@ export function createVoice(deps) {
 		ui.orb.dataset.state = shown;
 		let label = sess.paused ? "Paused" : sess.muted && shown === "muted" ? "Muted" : LABELS[sess.state];
 		if (ptt && sess.state === "recording") label = "Listening… tap when done";
+		const micIdle = sess.micBlocked && !sess.stream && !active && !sess.paused && !sess.muted && sess.state !== "starting";
+		if (micIdle) {
+			label = LABELS.micIdle;
+			ui.orb.dataset.state = "idle";
+		}
 		ui.state.textContent = label;
 		let hint = "";
 		if (sess.state !== "starting" && !sess.paused) {
 			if (ptt) hint = "Tap the orb to talk, then tap again to send.";
 			else if (active) hint = prefs.talkOver ? "Speak any time to interrupt, or tap the orb." : "Tap the orb to interrupt.";
+			else if (micIdle) hint = "The microphone paused while I spoke. Tap the orb to keep talking.";
 			else if (shown === "muted") hint = "The microphone is off.";
 			else hint = "Just talk. I'll answer when you pause.";
 		}
@@ -458,6 +551,12 @@ export function createVoice(deps) {
 		const sess = s;
 		if (!sess || sess.paused || sess.state === "starting") return;
 		sess.ctx.resume().catch(() => {});
+		if (sess.micBlocked && !sess.stream) {
+			sess.micBlocked = false;
+			syncMic(sess);
+			render();
+			return;
+		}
 		if (prefs.mode === "ptt") {
 			if (sess.state === "recording") stopRecording(sess);
 			else if (sess.state === "idle" || sess.state === "thinking" || sess.state === "speaking") startRecording(sess);
@@ -570,6 +669,7 @@ export function createVoice(deps) {
 		sess.state = sess.state === "starting" ? "starting" : prefs.mode === "ptt" ? "idle" : "listening";
 		filter = voiceOf(prefs.voice)?.lang || "en";
 		renderVoices();
+		syncMic(sess);
 		render();
 		ui.sheet.inert = false;
 		ui.sheet.classList.add("open");
@@ -589,6 +689,7 @@ export function createVoice(deps) {
 		if (s) {
 			s.paused = false;
 			s.seg.reset();
+			syncMic(s);
 			render();
 			ui.chip.focus({ preventScroll: true });
 		}
@@ -650,6 +751,7 @@ export function createVoice(deps) {
 			const res = await post("/api/voice/speak", JSON.stringify({ text: PREVIEW[voice.lang](cap(id)), voice: id }), "application/json");
 			const buffer = await sess.ctx.decodeAudioData(await res.arrayBuffer());
 			if (s !== sess || sess.preview?.token !== token) return;
+			if (sess.ctx.state !== "running") sess.ctx.resume().catch(() => {});
 			const source = sess.ctx.createBufferSource();
 			source.buffer = buffer;
 			source.connect(sess.out);
@@ -681,7 +783,13 @@ export function createVoice(deps) {
 			sess.stream?.getAudioTracks().forEach((t) => (t.enabled = true));
 		}
 		if (sess.state !== "starting") idle(sess);
+		syncMic(sess);
 		render();
+	}
+
+	if (IOS) {
+		ui.talkOver.querySelector("small").textContent =
+			"Speak to interrupt. On iPhone this keeps the microphone open during replies, which can stop them playing aloud; with it off, tap the orb to interrupt.";
 	}
 
 	/* ---------- Events ---------- */
@@ -701,6 +809,7 @@ export function createVoice(deps) {
 			if (sess.state === "recording") idle(sess);
 			sess.seg.reset();
 		}
+		syncMic(sess);
 		render();
 	});
 	ui.modes.addEventListener("click", (e) => {
@@ -710,6 +819,7 @@ export function createVoice(deps) {
 	ui.talkOver.addEventListener("click", () => {
 		prefs.talkOver = !prefs.talkOver;
 		storage.set(KEY_TALK_OVER, prefs.talkOver ? "1" : "0");
+		if (s) syncMic(s);
 		render();
 	});
 	ui.filter.addEventListener("click", (e) => {
@@ -844,6 +954,7 @@ class Speaker {
 	}
 
 	schedule(item, buffer) {
+		if (this.ctx.state !== "running") this.ctx.resume().catch(() => {});
 		const source = this.ctx.createBufferSource();
 		source.buffer = buffer;
 		source.connect(this.out);
