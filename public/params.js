@@ -84,15 +84,18 @@ function checkValue(spec, value, name) {
 			}
 			if (!spec.options.includes(value.type)) fail(`type must be one of ${[...spec.options, "json_schema"].join(", ")}`);
 			return { type: value.type };
-		case "bias":
+		case "bias": {
+			const low = spec.min ?? -100;
+			const high = spec.max ?? 100;
 			if (!isPlainObject(value)) fail("must be an object mapping token IDs to numbers");
 			for (const [token, bias] of Object.entries(value)) {
 				if (!/^\d+$/.test(token)) fail("keys must be token IDs");
-				if (typeof bias !== "number" || !Number.isFinite(bias) || bias < -100 || bias > 100) {
-					fail("values must be numbers from -100 to 100");
+				if (typeof bias !== "number" || !Number.isFinite(bias) || bias < low || bias > high) {
+					fail(`values must be numbers from ${low} to ${high}`);
 				}
 			}
 			return value;
+		}
 		default:
 			fail("has an unsupported type");
 	}

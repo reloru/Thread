@@ -47,7 +47,7 @@ export function sanitizeTools(input) {
 const truncate = (text, max = MAX_TOOL_TEXT) =>
 	text.length > max ? `${text.slice(0, max)}\n… [truncated ${text.length - max} characters]` : text;
 
-export function agentStream({ env, model, input, tools, chatId, options }) {
+export function agentStream({ env, model, input, tools, chatId, options, asContent = false }) {
 	const { readable, writable } = new TransformStream();
 	const writer = writable.getWriter();
 	const send = (data) => writer.write(encoder.encode(`data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`));
@@ -59,7 +59,7 @@ export function agentStream({ env, model, input, tools, chatId, options }) {
 			for (let round = 0; round < MAX_ROUNDS; round++) {
 				// Tools stay defined on every round: without them some models print raw tool-call markup.
 				const stream = await env.AI.run(model, { ...input, messages, tools: defs }, options);
-				const { calls, content } = await relay(stream, send);
+				const { calls, content } = await relay(asContent ? reasoningAsContent(stream) : stream, send);
 				if (!calls.length) break;
 				if (round === MAX_ROUNDS - 1) {
 					send({ choices: [{ index: 0, delta: { content: `\n\n_Stopped after ${MAX_ROUNDS} rounds of tool use._` } }] });
@@ -87,6 +87,49 @@ export function agentStream({ env, model, input, tools, chatId, options }) {
 	})();
 
 	return readable;
+}
+
+// Rewrites a model SSE stream so reasoning deltas arrive as reply content. Other lines pass through unchanged.
+export function reasoningAsContent(stream) {
+	const decoder = new TextDecoder();
+	let buffer = "";
+	const rewrite = (line) => {
+		const data = line.startsWith("data:") ? line.slice(5).trim() : "";
+		if (!data || data === "[DONE]") return line;
+		let evt;
+		try {
+			evt = JSON.parse(data);
+		} catch {
+			return line;
+		}
+		let changed = false;
+		for (const choice of evt.choices || []) {
+			const delta = choice?.delta;
+			const text = delta?.reasoning_content ?? delta?.reasoning;
+			if (typeof text !== "string" || !text) continue;
+			delta.content = (typeof delta.content === "string" ? delta.content : "") + text;
+			delete delta.reasoning_content;
+			delete delta.reasoning;
+			changed = true;
+		}
+		return changed ? `data: ${JSON.stringify(evt)}` : line;
+	};
+	return stream.pipeThrough(
+		new TransformStream({
+			transform(chunk, controller) {
+				buffer += decoder.decode(chunk, { stream: true });
+				const end = buffer.lastIndexOf("\n");
+				if (end === -1) return;
+				const lines = buffer.slice(0, end).split("\n");
+				buffer = buffer.slice(end + 1);
+				controller.enqueue(encoder.encode(`${lines.map(rewrite).join("\n")}\n`));
+			},
+			flush(controller) {
+				buffer += decoder.decode();
+				if (buffer) controller.enqueue(encoder.encode(rewrite(buffer)));
+			},
+		}),
+	);
 }
 
 // Reads one model SSE stream, forwards content/reasoning chunks, and collects tool calls.

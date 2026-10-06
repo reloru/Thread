@@ -30,7 +30,7 @@ Live: https://thread.reloru.workers.dev
 
 - Settings (gear in the model picker):
   - Instructions sent as the system message: one text for all chats, optionally replaced per chat.
-  - Per-model parameters: reasoning effort and thinking toggles, temperature, top P/K, penalties, max output tokens, stop sequences, seed, response format, logit bias. Ranges and options follow each model's schema, narrowed where the service behaves differently (noted in the panel).
+  - Per-model parameters: reasoning effort and thinking toggles, temperature, top P/K, penalties, max output tokens, stop sequences, seed, response format, logit bias. Ranges and options follow each model's schema, narrowed where the service rejects or mishandles values. Controls that had no measurable effect in testing are not offered (for example seed on several models, Clear thinking, Skip special tokens).
   - Empty fields, shown as –, are left out of the request and the model uses its own default. Only max output tokens is always sent (some models stop after 256 tokens without it).
   - Advanced JSON: any other schema field for that model (tools, n, logprobs, …), sent as-is. The Worker validates every parameter against the same rules (`public/params.js`).
 - Tools, switched on per chat with the chips above the composer:

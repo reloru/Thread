@@ -316,12 +316,12 @@ test("voice mode turns thinking off, keeps other settings and adds the spoken-st
 		worker.fetch(req("/api/chat", { method: "POST", body: { model, messages: [{ role: "user", content: "hi" }], ...extra } }), env);
 
 	const qwen = "@cf/qwen/qwen3.8-27b";
-	await post(qwen, {
+	await post("@cf/nvidia/nemotron-3-120b-a12b", {
 		voice: { lang: "en" },
 		instructions: "Be brief.",
-		params: { temperature: 0.3, chat_template_kwargs: { enable_thinking: true, clear_thinking: true } },
+		params: { temperature: 0.3, chat_template_kwargs: { enable_thinking: true, low_effort: true } },
 	});
-	assert.deepEqual(calls[0].input.chat_template_kwargs, { enable_thinking: false, clear_thinking: true });
+	assert.deepEqual(calls[0].input.chat_template_kwargs, { enable_thinking: false, low_effort: true });
 	assert.equal(calls[0].input.temperature, 0.3);
 	const system = calls[0].input.messages[0];
 	assert.equal(system.role, "system");
@@ -366,4 +366,25 @@ test("images reach the new vision models and become a note for Granite", async (
 	assert.deepEqual(calls[0].input.messages[0].content[1], { type: "image_url", image_url: { url: IMG } });
 	assert.deepEqual(calls[1].input.messages[0].content[1], { type: "image_url", image_url: { url: IMG } });
 	assert.match(calls[2].input.messages[0].content, /^what\?\n\n\[An image was attached/);
+});
+
+test("Nemotron with Thinking off: the reply the service streams as reasoning arrives as content", async () => {
+	const stream = () =>
+		new ReadableStream({
+			start(c) {
+				c.enqueue(new TextEncoder().encode('data: {"choices":[{"index":0,"delta":{"reasoning":"Hello"}}]}\n\ndata: [DONE]\n\n'));
+				c.close();
+			},
+		});
+	const { env } = makeEnv({ AI: { run: async () => stream() } });
+	const post = async (model, extra) =>
+		(await worker.fetch(req("/api/chat", { method: "POST", body: { model, messages: [{ role: "user", content: "hi" }], ...extra } }), env)).text();
+	const nemotron = "@cf/nvidia/nemotron-3-120b-a12b";
+	const off = { params: { chat_template_kwargs: { enable_thinking: false } } };
+	assert.match(await post(nemotron, off), /"delta":\{"content":"Hello"\}/);
+	assert.match(await post(nemotron, { voice: { lang: "en" } }), /"delta":\{"content":"Hello"\}/);
+	assert.match(await post(nemotron, { ...off, tools: ["web"] }), /"delta":\{"content":"Hello"\}/);
+	assert.match(await post(nemotron, { params: { chat_template_kwargs: { enable_thinking: true } } }), /"reasoning":"Hello"/);
+	assert.match(await post(nemotron, {}), /"reasoning":"Hello"/);
+	assert.match(await post("@cf/qwen/qwen3.8-27b", off), /"reasoning":"Hello"/, "only models flagged for it are rewritten");
 });

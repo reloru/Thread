@@ -33,11 +33,10 @@ test("empty settings produce no params", () => {
 });
 
 test("controls convert to wire format", () => {
-	const wire = toWire(GEMMA, {
+	const wire = toWire(QWEN, {
 		values: {
 			temperature: 0.4,
 			enable_thinking: false,
-			clear_thinking: true,
 			stop: "END\n\nSTOP\r",
 			response_format: "json_object",
 			logit_bias: '{"42": -100}',
@@ -48,7 +47,7 @@ test("controls convert to wire format", () => {
 	});
 	assert.deepEqual(wire, {
 		temperature: 0.4,
-		chat_template_kwargs: { enable_thinking: false, clear_thinking: true },
+		chat_template_kwargs: { enable_thinking: false },
 		stop: ["END", "STOP"],
 		response_format: { type: "json_object" },
 		logit_bias: { 42: -100 },
@@ -57,14 +56,20 @@ test("controls convert to wire format", () => {
 	});
 });
 
+test("saved values for controls a model no longer offers are not sent", () => {
+	assert.deepEqual(toWire(GEMMA, { values: { temperature: 0.4, seed: 7, clear_thinking: true, skip_special_tokens: true } }), {
+		temperature: 0.4,
+	});
+});
+
 test("advanced JSON overrides controls and merges chat_template_kwargs", () => {
-	const wire = toWire(GEMMA, {
+	const wire = toWire(NEMOTRON, {
 		values: { temperature: 0.4, enable_thinking: false },
-		json: '{"temperature": 0.9, "chat_template_kwargs": {"clear_thinking": true}, "n": 1, "user": "me"}',
+		json: '{"temperature": 0.9, "chat_template_kwargs": {"low_effort": true}, "n": 1, "user": "me"}',
 	});
 	assert.deepEqual(wire, {
 		temperature: 0.9,
-		chat_template_kwargs: { enable_thinking: false, clear_thinking: true },
+		chat_template_kwargs: { enable_thinking: false, low_effort: true },
 		n: 1,
 		user: "me",
 	});
@@ -72,27 +77,25 @@ test("advanced JSON overrides controls and merges chat_template_kwargs", () => {
 
 test("range and enum violations are rejected", () => {
 	assert.throws(() => toWire(GLM, { values: { temperature: 3 } }), /temperature must be a number between 0 and 2/);
-	assert.throws(() => toWire(OSS, { values: { temperature: 2.5 } }), /between 0 and 2/);
+	assert.throws(() => toWire(OSS, { values: { temperature: 1.25 } }), /between 0 and 1.2/);
 	assert.throws(() => toWire(OSS, { values: { top_k: 0 } }), /top_k must be an integer between 1 and 50/);
 	assert.throws(() => toWire(KIMI, { values: { reasoning_effort: "low" } }), /one of high, none/);
 	assert.throws(() => toWire(GLM, { values: { max_completion_tokens: 1.5 } }), /integer/);
 	assert.throws(() => toWire(GLM, { values: { stop: "a\nb\nc\nd\ne" } }), /1 to 4/);
 	assert.throws(() => toWire(GLM, { values: { logit_bias: '{"x": 1}' } }), /token IDs/);
 	assert.throws(() => toWire(GLM, { values: { logit_bias: '{"1": 500}' } }), /-100 to 100/);
+	assert.throws(() => toWire(OSS20, { values: { logit_bias: '{"1": 31}' } }), /-100 to 30/);
 	assert.throws(() => toWire(GLM, { values: { logit_bias: "{bad" } }), /Logit bias: invalid JSON/);
 });
 
 test("GLM cannot disable thinking; gpt-oss has no chat_template_kwargs", () => {
-	assert.throws(() => sanitizeParams({ chat_template_kwargs: { enable_thinking: false } }, GLM), /enable_thinking is not supported/);
-	assert.deepEqual(sanitizeParams({ chat_template_kwargs: { clear_thinking: true } }, GLM), {
-		chat_template_kwargs: { clear_thinking: true },
-	});
+	assert.throws(() => sanitizeParams({ chat_template_kwargs: { enable_thinking: false } }, GLM), /chat_template_kwargs is not a parameter of GLM-5.3 Flash/);
 	assert.throws(() => sanitizeParams({ chat_template_kwargs: {} }, OSS), /not a parameter of gpt-oss-120b/);
 });
 
 test("response_format rules follow each model", () => {
 	assert.throws(() => sanitizeParams({ response_format: { type: "text" } }, OSS), /type must be one of json_object, json_schema/);
-	assert.deepEqual(sanitizeParams({ response_format: { type: "text" } }, GLM), { response_format: { type: "text" } });
+	assert.throws(() => sanitizeParams({ response_format: { type: "text" } }, GLM), /type must be one of json_object, json_schema/);
 	const schema = { type: "json_schema", json_schema: { name: "x", schema: { type: "object" } } };
 	assert.deepEqual(sanitizeParams({ response_format: schema }, OSS), { response_format: schema });
 	assert.throws(() => sanitizeParams({ response_format: { type: "json_schema" } }, GLM), /json_schema object with a name/);
@@ -111,15 +114,15 @@ test("unknown, reserved and malformed keys are rejected", () => {
 
 test("allowedKeys lists controls and extra keys", () => {
 	const keys = allowedKeys(GEMMA);
-	for (const k of ["temperature", "chat_template_kwargs", "skip_special_tokens", "tools", "n"]) assert.ok(keys.includes(k), k);
-	assert.ok(!keys.includes("enable_thinking"));
+	for (const k of ["temperature", "chat_template_kwargs", "tools", "n"]) assert.ok(keys.includes(k), k);
+	for (const k of ["enable_thinking", "skip_special_tokens", "seed"]) assert.ok(!keys.includes(k), k);
 	assert.ok(!allowedKeys(OSS).includes("chat_template_kwargs"));
 });
 
 test("Qwen 3.8 27B: effort levels, thinking toggle and the top_p floor follow the service", () => {
-	assert.deepEqual(toWire(QWEN, { values: { reasoning_effort: "xhigh", enable_thinking: false, clear_thinking: true } }), {
+	assert.deepEqual(toWire(QWEN, { values: { reasoning_effort: "xhigh", enable_thinking: false } }), {
 		reasoning_effort: "xhigh",
-		chat_template_kwargs: { enable_thinking: false, clear_thinking: true },
+		chat_template_kwargs: { enable_thinking: false },
 	});
 	assert.throws(() => toWire(QWEN, { values: { reasoning_effort: "none" } }), /one of xhigh, medium, low/);
 	assert.throws(() => toWire(QWEN, { values: { top_p: 0 } }), /top_p must be a number between 0.001 and 1/);
@@ -128,20 +131,21 @@ test("Qwen 3.8 27B: effort levels, thinking toggle and the top_p floor follow th
 
 test("Nemotron 3 120B: reasoning modes go through chat_template_kwargs only", () => {
 	assert.deepEqual(
-		toWire(NEMOTRON, { values: { enable_thinking: true, low_effort: true, force_nonempty_content: true } }),
-		{ chat_template_kwargs: { enable_thinking: true, low_effort: true, force_nonempty_content: true } },
+		toWire(NEMOTRON, { values: { enable_thinking: true, low_effort: true } }),
+		{ chat_template_kwargs: { enable_thinking: true, low_effort: true } },
 	);
+	assert.throws(() => sanitizeParams({ chat_template_kwargs: { force_nonempty_content: true } }, NEMOTRON), /force_nonempty_content is not supported/);
 	assert.throws(() => sanitizeParams({ reasoning_effort: "low" }, NEMOTRON), /reasoning_effort is not a parameter of Nemotron 3 120B/);
 	assert.throws(() => sanitizeParams({ chat_template_kwargs: { clear_thinking: true } }, NEMOTRON), /clear_thinking is not supported/);
 	assert.throws(() => toWire(NEMOTRON, { values: { top_p: 0 } }), /between 0.001 and 1/);
 });
 
-test("DeepSeek V4 Pro: effort levels include none, and top_p cannot be 0", () => {
-	assert.deepEqual(toWire(DEEPSEEK_PRO, { values: { reasoning_effort: "none", enable_thinking: false } }), {
-		reasoning_effort: "none",
+test("DeepSeek V4 Pro: effort none is not offered because it matched low, and top_p cannot be 0", () => {
+	assert.deepEqual(toWire(DEEPSEEK_PRO, { values: { reasoning_effort: "low", enable_thinking: false } }), {
+		reasoning_effort: "low",
 		chat_template_kwargs: { enable_thinking: false },
 	});
-	assert.throws(() => toWire(DEEPSEEK_PRO, { values: { reasoning_effort: "xhigh" } }), /one of max, high, low, none/);
+	for (const level of ["none", "xhigh"]) assert.throws(() => toWire(DEEPSEEK_PRO, { values: { reasoning_effort: level } }), /one of max, high, low\.$/);
 	assert.throws(() => toWire(DEEPSEEK_PRO, { values: { top_p: 0 } }), /between 0.001 and 1/);
 });
 
@@ -208,41 +212,64 @@ test("Granite 4.0 Micro: older schema, temperature up to 5, no logit bias, no te
 	assert.deepEqual(toWire(GRANITE, { values: { stop: "END" } }), { stop: ["END"] });
 });
 
-test("Mistral Small 3.1: penalties start at 0, text and JSON response formats, temperature up to 5", () => {
+test("Mistral Small 3.1: penalties start at 0, JSON response format, temperature up to 5", () => {
 	assert.throws(() => toWire(MISTRAL, { values: { frequency_penalty: -0.5 } }), /between 0 and 2/);
 	assert.throws(() => toWire(MISTRAL, { values: { presence_penalty: -0.5 } }), /between 0 and 2/);
-	assert.deepEqual(toWire(MISTRAL, { values: { frequency_penalty: 0.5, temperature: 5, response_format: "text" } }), {
+	assert.deepEqual(toWire(MISTRAL, { values: { frequency_penalty: 0.5, temperature: 5, response_format: "json_object" } }), {
 		frequency_penalty: 0.5,
 		temperature: 5,
-		response_format: { type: "text" },
+		response_format: { type: "json_object" },
 	});
+	assert.throws(() => toWire(MISTRAL, { values: { response_format: "text" } }), /type must be one of json_object, json_schema/);
 	assert.throws(() => toWire(MISTRAL, { values: { top_p: 0 } }), /between 0.001 and 1/);
 	assert.throws(() => toWire(MISTRAL, { values: { top_p: 1.5 } }), /between 0.001 and 1/);
 	assert.throws(() => sanitizeParams({ logit_bias: { 1: 1 } }, MISTRAL), /not a parameter/);
 });
 
-test("gpt-oss-20b: same controls as the 120b, but the service accepts temperature up to 5", () => {
-	assert.deepEqual(toWire(OSS20, { values: { reasoning_effort: "low", temperature: 5, logit_bias: '{"7": -5}' } }), {
+test("gpt-oss-20b: the 120b's controls without response format, temperature up to 1, logit bias up to 30", () => {
+	assert.deepEqual(toWire(OSS20, { values: { reasoning_effort: "low", temperature: 1, logit_bias: '{"7": -100, "8": 30}' } }), {
 		reasoning_effort: "low",
-		temperature: 5,
-		logit_bias: { 7: -5 },
+		temperature: 1,
+		logit_bias: { 7: -100, 8: 30 },
 	});
+	assert.throws(() => toWire(OSS20, { values: { temperature: 1.05 } }), /between 0 and 1\.$/);
 	assert.throws(() => toWire(OSS20, { values: { reasoning_effort: "none" } }), /one of low, medium, high/);
-	assert.throws(() => toWire(OSS20, { values: { response_format: "text" } }), /type must be one of json_object, json_schema/);
+	assert.throws(() => sanitizeParams({ response_format: { type: "json_object" } }, OSS20), /response_format is not a parameter of gpt-oss-20b/);
 	assert.throws(() => sanitizeParams({ chat_template_kwargs: {} }, OSS20), /not a parameter/);
 	assert.deepEqual(
-		OSS20.controls.map((c) => c.key).filter((k) => k !== "temperature"),
-		byId("@cf/openai/gpt-oss-120b").controls.map((c) => c.key).filter((k) => k !== "temperature"),
+		OSS20.controls.map((c) => c.key),
+		OSS.controls.map((c) => c.key).filter((k) => k !== "response_format"),
 	);
 });
 
-test("Kimi K2.7 Code: reasoning is always on, effort none is not offered", () => {
-	assert.deepEqual(toWire(KIMI_CODE, { values: { reasoning_effort: "low", clear_thinking: true } }), {
-		reasoning_effort: "low",
-		chat_template_kwargs: { clear_thinking: true },
-	});
-	for (const level of ["max", "high", "medium", "low"]) assert.deepEqual(toWire(KIMI_CODE, { values: { reasoning_effort: level } }), { reasoning_effort: level });
-	for (const level of ["none", "minimal", "xhigh"]) assert.throws(() => toWire(KIMI_CODE, { values: { reasoning_effort: level } }), /one of max, high, medium, low/);
-	assert.throws(() => sanitizeParams({ chat_template_kwargs: { enable_thinking: false } }, KIMI_CODE), /enable_thinking is not supported/);
+test("repetition penalty: 0 is refused by the service; gpt-oss starts at 0.7", () => {
+	for (const m of [GRANITE, LLAMA, MISTRAL, OSS, OSS20]) {
+		assert.throws(() => toWire(m, { values: { repetition_penalty: 0 } }), /repetition_penalty must be a number/, m.id);
+		assert.deepEqual(toWire(m, { values: { repetition_penalty: 2 } }), { repetition_penalty: 2 }, m.id);
+	}
+	for (const m of [GRANITE, LLAMA, MISTRAL]) assert.deepEqual(toWire(m, { values: { repetition_penalty: 0.05 } }), { repetition_penalty: 0.05 }, m.id);
+	for (const m of [OSS, OSS20]) {
+		assert.throws(() => toWire(m, { values: { repetition_penalty: 0.65 } }), /between 0.7 and 2/, m.id);
+		assert.deepEqual(toWire(m, { values: { repetition_penalty: 0.7 } }), { repetition_penalty: 0.7 }, m.id);
+	}
+});
+
+test("controls that had no measurable effect are not offered", () => {
+	const keys = (m) => m.controls.map((c) => c.key);
+	for (const m of MODELS) {
+		for (const k of ["clear_thinking", "skip_special_tokens", "force_nonempty_content"]) assert.ok(!keys(m).includes(k), `${m.id} ${k}`);
+		const format = m.controls.find((c) => c.key === "response_format");
+		if (format) assert.ok(!format.options.includes("text"), m.id);
+	}
+	const seeded = MODELS.filter((m) => keys(m).includes("seed")).map((m) => m.name).sort();
+	assert.deepEqual(seeded, ["Granite 4.0 Micro", "Llama 3.3 70B", "Mistral Small 3.1", "Nemotron 3 120B", "Qwen 3.8 27B", "gpt-oss-120b", "gpt-oss-20b"]);
+	assert.ok(!keys(KIMI).includes("enable_thinking"));
+	assert.deepEqual(keys(KIMI_CODE).filter((k) => KIMI_CODE.controls.find((c) => c.key === k).group === "Reasoning"), []);
+});
+
+test("Kimi K2.7 Code: no reasoning controls, since effort levels made no difference", () => {
+	assert.throws(() => sanitizeParams({ reasoning_effort: "low" }, KIMI_CODE), /reasoning_effort is not a parameter of Kimi K2.7 Code/);
+	assert.throws(() => sanitizeParams({ chat_template_kwargs: { enable_thinking: false } }, KIMI_CODE), /chat_template_kwargs is not a parameter of Kimi K2.7 Code/);
+	assert.deepEqual(toWire(KIMI_CODE, { values: { temperature: 0.7, logit_bias: '{"1": 5}' } }), { temperature: 0.7, logit_bias: { 1: 5 } });
 	assert.equal(KIMI_CODE.voiceParams, undefined);
 });

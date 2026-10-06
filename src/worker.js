@@ -1,6 +1,6 @@
 import { DEFAULT_MAX_TOKENS, DEFAULT_MODEL, MODELS } from "./models.js";
 import { ParamError, isPlainObject, sanitizeParams } from "../public/params.js";
-import { agentStream, sanitizeTools } from "./agent.js";
+import { agentStream, reasoningAsContent, sanitizeTools } from "./agent.js";
 import { HttpError, NO_STORE, aiOptions, json, readBytes, requireMethod } from "./http.js";
 import { VOICE_LANGS, speak, transcribe, turn, voiceConfig, voiceInstruction } from "./voice.js";
 
@@ -109,8 +109,9 @@ async function chat(request, env) {
 	}
 
 	const options = aiOptions(env);
+	const asContent = Boolean(model.replyInReasoningWhenThinkingOff && input.chat_template_kwargs?.enable_thinking === false);
 	if (tools.length) {
-		const stream = agentStream({ env, model: model.id, input, tools, chatId: body.chatId, options });
+		const stream = agentStream({ env, model: model.id, input, tools, chatId: body.chatId, options, asContent });
 		return new Response(stream, {
 			headers: { "content-type": "text/event-stream; charset=utf-8", ...NO_STORE },
 		});
@@ -123,7 +124,7 @@ async function chat(request, env) {
 		throw new HttpError(502, `Model request failed: ${err?.message || String(err)}`);
 	}
 
-	return new Response(stream, {
+	return new Response(asContent ? reasoningAsContent(stream) : stream, {
 		headers: { "content-type": "text/event-stream; charset=utf-8", ...NO_STORE },
 	});
 }
