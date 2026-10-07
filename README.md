@@ -47,7 +47,11 @@ Live: https://thread.reloru.workers.dev
   - Voice requests turn thinking off where a way is verified (Gemma, DeepSeek, Qwen, Nemotron: Thinking off; Kimi: effort none), add a spoken-style instruction in the language of the voice, and keep only the spoken part of a reply you interrupt.
 - Chat history and settings are stored on the device (IndexedDB and localStorage). Nothing is stored server-side.
 - Requests go straight to Workers AI. To route them through an AI Gateway for logs and analytics, set `AI_GATEWAY_ID` in `wrangler.jsonc` to the gateway's ID.
-- Access is gated by a passcode held as a Worker secret. The app asks for it once per device. Five wrong passcodes from one IP lock that IP out for 15 minutes, right passcode included; each further lockout doubles, up to 24 hours. A correct passcode, or a day without failures after a lockout ends, clears it. Other IPs are not affected.
+- Access is gated by a passcode held as a Worker secret. The app asks for it once per device and exchanges it for a sign-in token, which it sends from then on; the passcode is not stored on the device. Apps that stored the passcode before tokens existed swap it for a token on their next start.
+  - Lockouts apply to passcodes only; a signed-in device keeps working through them. 5 wrong passcodes within an hour, from anywhere, freeze passcode logins for 8 hours. The 4th gets a warning on the lock screen and a notification to every device that allowed notifications; the 5th sends another.
+  - Per IP, 5 wrong passcodes lock that IP for 15 minutes; each further lockout doubles, up to 24 hours. A correct passcode, or a day without failures after a lockout ends, clears it. This catches guessing slow enough to stay under the hourly limit.
+  - While locked, the right passcode is refused too. Requests with no credentials or with an invalid token are not counted.
+- Notifications: the app asks once per device, with a card above the chips (iPhone allows the permission prompt only after a tap; notifications need the Home Screen app there, iOS 16.4 or later). Allowing sends a test notification. Pushes are encrypted and signed in the Worker (RFC 8291, RFC 8292) without libraries; `public/sw.js` shows them.
 - Usage counter (right of the Code and Web chips): Workers AI neurons and billed USD for today (UTC), or this month after a tap. Billed means above the free 10,000 neurons per day, at $0.011 per 1,000 ([pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/)), each day counted separately.
   - The figures come from the account's GraphQL analytics (`aiInferenceAdaptiveGroups`), refreshed every minute while the app is open. They cover the whole account (the data has no per-Worker field), so Workers AI calls made outside the app count too.
   - Analytics rows appear about 10 minutes after a request. Each reply's own cost, which the model reports in its last stream event, is added on the device that received it until analytics includes it. Voice transcription and speech are counted only through analytics.
@@ -60,7 +64,15 @@ Change it from any machine with Node and Cloudflare credentials:
 echo -n 'new-passcode' | npx wrangler@4.147.0 secret put PASSCODE --name thread
 ```
 
-Devices holding the old passcode are sent back to the lock screen on their next request.
+Changing it signs every device out (tokens are derived from it); each goes back to the lock screen on its next request. A passcode cannot start with `t1.`, which marks a token.
+
+Sign-in tokens and notifications need two more secrets, made once:
+
+```sh
+openssl rand -base64 32 | tr -d '\n' | npx wrangler@4.147.0 secret put SESSION_SECRET --name thread && node -e 'crypto.subtle.generateKey({name:"ECDSA",namedCurve:"P-256"},true,["sign"]).then(k=>crypto.subtle.exportKey("jwk",k.privateKey)).then(j=>process.stdout.write(JSON.stringify(j)))' | npx wrangler@4.147.0 secret put VAPID_JWK --name thread
+```
+
+Replacing `SESSION_SECRET` signs every device out. Replacing `VAPID_JWK` makes existing notification subscriptions invalid until each device opens the app again.
 
 ## Usage counter
 
@@ -86,13 +98,13 @@ The AI binding always calls the real Workers AI service, so local requests are b
 
 ## Layout
 
-- `src/worker.js`: API (`/api/auth`, `/api/models`, `/api/chat`, `/api/usage`), passcode check, request and parameter validation, Workers AI streaming.
-- `src/lockout.js` + `src/guard.js`: passcode lockout rules and the Durable Object that keeps the per-IP counts. `src/usage.js`: `/api/usage` (neurons per UTC day this month from the GraphQL Analytics API).
+- `src/worker.js`: API (`/api/auth`, `/api/models`, `/api/chat`, `/api/usage`, `/api/push/*`), passcode check, request and parameter validation, Workers AI streaming.
+- `src/auth.js`: sign-in tokens. `src/lockout.js` + `src/guard.js`: passcode lockout rules and the Durable Object that keeps the counts and the push subscriptions. `src/push.js` + `src/alerts.js`: Web Push (VAPID, payload encryption) and the notification texts. `src/usage.js`: `/api/usage` (neurons per UTC day this month from the GraphQL Analytics API).
 - `src/models.js`: model allowlist and per-model parameter specs.
 - `src/voice.js` + `src/voices.js`: voice API (`/api/voices`, `/api/voice/transcribe`, `/api/voice/turn`, `/api/voice/speak`) and the Aura-2 voice list. `src/http.js`: helpers shared by the Worker and the voice API.
 - `src/agent.js`: server-side tool loop (streams model output, runs tool calls, feeds results back, at most 6 rounds).
 - `src/sandbox.js` + `container/`: Durable Object that starts the Python sandbox container; `runner.py` (HTTP) and `kernel.py` (persistent interpreter).
 - `src/index.js`: Worker entry (exports the Worker and the `Sandbox` and `Guard` classes).
 - `public/params.js`: parameter validation shared by the app and the Worker; `public/settings.js`: settings panel.
-- `public/voice.js`: voice mode (microphone, turn taking, playback, voice picker); `pcm.js`: resampling, WAV encoding, voice detection and turn segmentation; `speech.js`: markdown to spoken sentences; `voice-worklet.js`: microphone tap. `public/usage.js`: usage counter.
+- `public/voice.js`: voice mode (microphone, turn taking, playback, voice picker); `pcm.js`: resampling, WAV encoding, voice detection and turn segmentation; `speech.js`: markdown to spoken sentences; `voice-worklet.js`: microphone tap. `public/usage.js`: usage counter. `public/notify.js` + `public/sw.js`: notification prompt, push subscription and the service worker that shows notifications.
 - `public/`: static app (no build step). `markdown.js` is the renderer; every text path is HTML-escaped and links are limited to http(s) and mailto. `_headers` sets a strict CSP.

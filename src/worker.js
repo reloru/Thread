@@ -4,6 +4,9 @@ import { agentStream, reasoningAsContent, sanitizeTools } from "./agent.js";
 import { HttpError, NO_STORE, aiOptions, json, readBytes, requireMethod } from "./http.js";
 import { VOICE_LANGS, speak, transcribe, turn, voiceConfig, voiceInstruction } from "./voice.js";
 import { usage } from "./usage.js";
+import { TOKEN_PREFIX, issueToken, verifyToken } from "./auth.js";
+import { ALERTS, LAST_TRY, notifyAll } from "./alerts.js";
+import { cleanSubscription, sendPush, vapidPublicKey } from "./push.js";
 
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
 const MAX_MESSAGES = 400;
@@ -22,11 +25,11 @@ const IMAGE_PLACEHOLDER = "[An image was attached here, but the current model ca
 const IMAGE_DROPPED = "[An earlier image was omitted to stay within the per-request image limit.]";
 
 export default {
-	async fetch(request, env) {
+	async fetch(request, env, ctx) {
 		const url = new URL(request.url);
 		if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
 		try {
-			return await api(request, env, url);
+			return await api(request, env, url, ctx);
 		} catch (err) {
 			if (err instanceof HttpError) return json({ error: err.message }, err.status, err.headers);
 			if (err instanceof ParamError) return json({ error: err.message }, 400);
@@ -36,20 +39,51 @@ export default {
 	},
 };
 
-async function api(request, env, url) {
+async function api(request, env, url, ctx) {
 	if (!env.PASSCODE) throw new HttpError(503, "PASSCODE secret is not configured on the Worker.");
-	const ok = await authorized(request, env.PASSCODE);
-	const ip = request.headers.get("cf-connecting-ip") || "unknown";
-	const verdict = await env.GUARD.getByName("passcode").attempt(ip, ok);
-	if (verdict.until) {
-		const seconds = Math.max(1, Math.ceil((verdict.until - Date.now()) / 1000));
-		throw new HttpError(429, `Too many wrong passcodes. Try again in ${waitText(seconds)}.`, { "retry-after": String(seconds) });
+	const header = request.headers.get("authorization") || "";
+	const bearer = header.startsWith("Bearer ") ? header.slice(7) : "";
+	// A signed-in device sends its token; the passcode comes from the lock screen, or from an app that has
+	// not switched to a token yet. Only passcodes count toward lockouts.
+	let device = null;
+	if (bearer.startsWith(TOKEN_PREFIX)) {
+		device = await verifyToken(env, bearer);
+		if (!device) throw new HttpError(401, "Unauthorized");
+	} else if (!bearer) {
+		// No credentials at all (a crawler, a stale tab) is not a guess.
+		throw new HttpError(401, "Unauthorized");
+	} else {
+		await checkPasscode(request, env, url, ctx, bearer);
 	}
-	if (!verdict.allowed) throw new HttpError(401, "Unauthorized");
 
 	switch (url.pathname) {
 		case "/api/auth":
 			requireMethod(request, "POST");
+			return json({ token: await issueToken(env) });
+		case "/api/push/key":
+			requireMethod(request, "GET");
+			if (!env.VAPID_JWK) throw new HttpError(503, "Notifications are not configured.");
+			return json({ key: vapidPublicKey(env) });
+		case "/api/push/subscribe": {
+			requireMethod(request, "POST");
+			if (!device) throw new HttpError(400, "Sign in again to turn on notifications.");
+			let subscription;
+			try {
+				subscription = cleanSubscription(JSON.parse(new TextDecoder().decode(await readBytes(request, 8192, "Request too large."))));
+			} catch (err) {
+				if (err instanceof HttpError) throw err;
+			}
+			if (!subscription) throw new HttpError(400, "Invalid push subscription.");
+			await env.GUARD.getByName("passcode").subscribe(device, subscription);
+			// ?welcome=1 when the user just tapped Allow: one notification so they see it works.
+			if (url.searchParams.get("welcome") === "1") {
+				ctx?.waitUntil(sendPush(env, subscription, ALERTS.welcome, url.origin).catch((err) => console.error("welcome push failed", err?.message)));
+			}
+			return new Response(null, { status: 204, headers: NO_STORE });
+		}
+		case "/api/push/unsubscribe":
+			requireMethod(request, "POST");
+			if (device) await env.GUARD.getByName("passcode").unsubscribe(device);
 			return new Response(null, { status: 204, headers: NO_STORE });
 		case "/api/models":
 			requireMethod(request, "GET");
@@ -232,10 +266,32 @@ async function readBody(request, limit) {
 	return new TextDecoder().decode(await readBytes(request, limit, "Request too large."));
 }
 
+// Checks a passcode against the lockouts (lockout.js); throws 401 or 429 unless it is right and not locked out.
+// Crossing a global threshold notifies every device that allowed notifications.
+async function checkPasscode(request, env, url, ctx, bearer) {
+	const ok = await passcodeMatches(bearer, env.PASSCODE);
+	const ip = request.headers.get("cf-connecting-ip") || "unknown";
+	const guard = env.GUARD.getByName("passcode");
+	const verdict = await guard.attempt(ip, ok);
+	if (verdict.event) {
+		const sending = notifyAll(env, guard, { ...ALERTS[verdict.event], until: verdict.until || undefined }, url.origin).catch((err) =>
+			console.error("alert failed", err?.message || String(err)),
+		);
+		ctx?.waitUntil(sending);
+	}
+	if (verdict.until) {
+		const seconds = Math.max(1, Math.ceil((verdict.until - Date.now()) / 1000));
+		const message =
+			verdict.scope === "global"
+				? `Too many wrong passcodes, so logins are frozen for ${waitText(seconds)}. Go touch grass. 🌱`
+				: `Too many wrong passcodes. Try again in ${waitText(seconds)}.`;
+		throw new HttpError(429, message, { "retry-after": String(seconds) });
+	}
+	if (!verdict.allowed) throw new HttpError(401, verdict.event === "warning" ? LAST_TRY : "Unauthorized");
+}
+
 // The app percent-encodes the passcode (header values must be ISO-8859-1); raw values are accepted too.
-async function authorized(request, passcode) {
-	const header = request.headers.get("authorization") || "";
-	const raw = header.startsWith("Bearer ") ? header.slice(7) : "";
+async function passcodeMatches(raw, passcode) {
 	let decoded = raw;
 	try {
 		decoded = decodeURIComponent(raw);

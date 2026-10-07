@@ -552,6 +552,33 @@ svg {
 
 .notice { max-width: 760px; margin: 0 auto 6px; color: var(--muted); font-size: 13px; text-align: center; }
 
+/* One-time request to allow notifications, above the chips. */
+.notify-card {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 4px 10px;
+	max-width: 760px;
+	margin: 0 auto 8px;
+	padding: 12px 12px 8px;
+	border: 1px solid var(--border);
+	border-radius: 16px;
+	background: var(--surface);
+}
+.notify-card > svg { width: 20px; height: 20px; margin-top: 1px; color: var(--accent); }
+.notify-card p { margin: 0; font-size: 14px; line-height: 1.4; color: var(--muted); }
+.notify-card b { color: var(--text); font-weight: 600; }
+.notify-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 6px; }
+.notify-allow {
+	height: 36px;
+	padding: 0 16px;
+	border: 0;
+	border-radius: 10px;
+	background: var(--text);
+	color: var(--bg);
+	font-size: 15px;
+	font-weight: 600;
+}
+
 .to-bottom {
 	position: absolute;
 	left: 50%;
