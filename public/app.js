@@ -4,6 +4,7 @@ import { createSettings } from "./settings.js";
 import { createVoice } from "./voice.js";
 import { createUsage } from "./usage.js";
 import { createNotify } from "./notify.js";
+import { createGeneral } from "./general.js";
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -28,7 +29,7 @@ const els = {
 	drawer: $("drawer"),
 	scrim: $("scrim"),
 	chatList: $("chatList"),
-	lockBtn: $("lockBtn"),
+	prefsBtn: $("prefsBtn"),
 	notifyCard: $("notifyCard"),
 	notifyAllow: $("notifyAllow"),
 	notifyLater: $("notifyLater"),
@@ -42,6 +43,9 @@ const els = {
 	settingsReset: $("settingsReset"),
 	settingsTitle: $("settingsTitle"),
 	settingsBody: $("settingsBody"),
+	prefs: $("prefs"),
+	prefsBack: $("prefsBack"),
+	prefsBody: $("prefsBody"),
 	lock: $("lock"),
 	lockForm: $("lockForm"),
 	passInput: $("passInput"),
@@ -104,19 +108,7 @@ const state = {
 
 class AuthError extends Error {}
 
-let instructionsTimer = 0;
-const settings = createSettings({
-	storage,
-	el,
-	icon,
-	getChat: () => state.chat,
-	onChatInstructions(value) {
-		const chat = state.chat;
-		chat.instructions = value.trim() ? value : undefined;
-		clearTimeout(instructionsTimer);
-		instructionsTimer = setTimeout(() => persist(chat), 400);
-	},
-});
+const settings = createSettings({ storage, el, icon });
 
 const voice = createVoice({
 	storage,
@@ -135,6 +127,8 @@ const voice = createVoice({
 const usage = createUsage({ storage, el, api, canFetch: () => Boolean(state.token), button: els.usage });
 
 const notify = createNotify({ storage, api, toast, card: els.notifyCard, allow: els.notifyAllow, later: els.notifyLater });
+
+const general = createGeneral({ storage, el, notify });
 
 function init() {
 	fitViewport();
@@ -890,7 +884,7 @@ async function respond(chat, params, hooks = {}) {
 				model: model.id,
 				messages: history,
 				params,
-				instructions: settings.instructionsFor(chat),
+				instructions: general.instructions(),
 				tools: chat.tools?.length ? chat.tools : undefined,
 				chatId: chat.id,
 				voice: hooks.voice,
@@ -1156,12 +1150,13 @@ function showScrim() {
 }
 
 function syncModal() {
-	const overlay = [els.drawer, els.sheet, els.settings, els.voice].some((o) => o.classList.contains("open"));
+	const overlay = [els.drawer, els.sheet, els.settings, els.prefs, els.voice].some((o) => o.classList.contains("open"));
 	els.app.inert = overlay || !els.lock.hidden;
 }
 
 function closeOverlays() {
 	closeSettings();
+	closePrefs();
 	voice.close();
 	els.drawer.classList.remove("open");
 	els.sheet.classList.remove("open");
@@ -1236,6 +1231,24 @@ function closeSettings() {
 	document.activeElement?.blur();
 	els.settings.classList.remove("open");
 	els.settings.inert = true;
+	syncModal();
+}
+
+function openPrefs() {
+	closeOverlays();
+	general.render(els.prefsBody);
+	els.prefsBody.scrollTop = 0;
+	els.prefs.inert = false;
+	els.prefs.classList.add("open");
+	syncModal();
+	els.prefsBack.focus();
+}
+
+function closePrefs() {
+	if (!els.prefs.classList.contains("open")) return;
+	document.activeElement?.blur();
+	els.prefs.classList.remove("open");
+	els.prefs.inert = true;
 	syncModal();
 }
 
@@ -1398,7 +1411,7 @@ function bindEvents() {
 	});
 	els.settingsReset.addEventListener("click", () => {
 		const model = currentModel();
-		if (!model || !confirm(`Reset all ${model.name} parameters to defaults?`)) return;
+		if (!model || !confirm(`Reset all ${model.name} settings to their defaults?`)) return;
 		settings.reset(model.id);
 		settings.render(els.settingsBody, model);
 	});
@@ -1421,12 +1434,10 @@ function bindEvents() {
 			openChat(row.dataset.id);
 		}
 	});
-	els.lockBtn.addEventListener("click", () => {
-		notify.signOut();
-		state.token = null;
-		storage.del(KEY_TOKEN);
-		storage.del(KEY_PASS);
-		showLock();
+	els.prefsBtn.addEventListener("click", openPrefs);
+	els.prefsBack.addEventListener("click", () => {
+		closePrefs();
+		openDrawer();
 	});
 	els.lockForm.addEventListener("submit", unlock);
 	els.passToggle.addEventListener("click", () => {

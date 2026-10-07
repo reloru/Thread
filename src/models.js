@@ -1,115 +1,133 @@
 // Prices are USD per million tokens [input, output], from the Workers AI model catalog API.
 // Parameter specs come from each model's input schema (GET /ai/models/schema), narrowed where
-// live requests disagreed with the schema; those cases carry a `note`.
+// live requests disagreed with the schema. `default` is the schema's documented default, shown greyed
+// out in an empty field; it is not sent. Max output tokens is the exception: the Worker always sends it.
 
 const DEFAULT_MAX_TOKENS = 16384;
 
 const temperature = (extra = {}) => ({
 	key: "temperature",
 	label: "Temperature",
-	group: "Sampling",
+	group: "Randomness",
 	type: "number",
 	min: 0,
 	max: 2,
 	step: 0.05,
 	default: 1,
-	help: "Sampling temperature between 0 and 2.",
+	help: "How predictable replies are. Lower values give focused, consistent answers; higher values give more varied, creative ones.",
 	...extra,
 });
 const topP = (extra = {}) => ({
 	key: "top_p",
 	label: "Top P",
-	group: "Sampling",
+	group: "Randomness",
 	type: "number",
 	min: 0,
 	max: 1,
 	step: 0.01,
 	default: 1,
-	help: "Nucleus sampling: considers the results of the tokens with top_p probability mass.",
+	help: "Limits the model to its most likely next tokens. At 1 it can use any of them; at 0.1, only the few that make up the top 10% of the odds. Lower values make replies more predictable. It's usually best to change this or Temperature, not both.",
 	...extra,
 });
+const FREQUENCY_HELP =
+	"Makes the model less likely to repeat words it has already used, more strongly the more often it has used them. Raise it if replies keep repeating themselves.";
+const PRESENCE_HELP = "Makes the model less likely to use a word again once it has appeared at all, which nudges it toward new topics.";
 const frequencyPenalty = {
 	key: "frequency_penalty",
 	label: "Frequency penalty",
-	group: "Sampling",
+	group: "Word choice",
 	type: "number",
 	min: -2,
 	max: 2,
 	step: 0.05,
 	default: 0,
-	help: "Penalizes new tokens based on their existing frequency in the text so far.",
+	help: `${FREQUENCY_HELP} Negative values make repetition more likely.`,
 };
 const presencePenalty = {
 	key: "presence_penalty",
 	label: "Presence penalty",
-	group: "Sampling",
+	group: "Word choice",
 	type: "number",
 	min: -2,
 	max: 2,
 	step: 0.05,
 	default: 0,
-	help: "Penalizes new tokens based on whether they appear in the text so far.",
+	help: `${PRESENCE_HELP} Negative values make it stick to what it has already said.`,
 };
+const MAX_TOKENS_HELP =
+	"The longest a reply can be, in tokens. A token is a short piece of text, often part of a word. A reply that reaches the limit stops partway and is marked “Hit length limit”.";
+// For models that think: verified on Qwen 3.8 and gpt-oss-120b, where a small limit ran out during thinking.
+const MAX_TOKENS_THINKING_HELP =
+	"The longest a reply can be, in tokens. A token is a short piece of text, often part of a word. Thinking counts toward the limit too, so a model that thinks for a long time can use it up before it starts answering. A reply that reaches the limit stops partway and is marked “Hit length limit”.";
 const maxTokens = (context, def = DEFAULT_MAX_TOKENS, extra = {}) => ({
 	key: "max_completion_tokens",
 	label: "Max output tokens",
-	group: "Output",
+	group: "Reply length",
 	type: "integer",
 	min: 1,
 	max: context,
 	default: def,
-	emptyLabel: String(def),
-	help: `An upper bound for the number of tokens that can be generated, reasoning included. When empty, the app sends ${def}.`,
+	help: MAX_TOKENS_THINKING_HELP,
 	...extra,
 });
 const seed = (extra = {}) => ({
 	key: "seed",
 	label: "Seed",
-	group: "Output",
+	group: "Randomness",
 	type: "integer",
-	help: "If specified, the system will make a best effort to sample deterministically.",
+	placeholder: "Random",
+	help: "Replies are normally different every time, even for the same message. Enter a whole number to make them repeatable: the same chat with the same settings and number should give the same reply again, though an exact match isn't guaranteed.",
 	...extra,
 });
 const stop = {
 	key: "stop",
 	label: "Stop sequences",
-	group: "Output",
+	group: "Reply length",
 	type: "stop",
 	maxItems: 4,
-	help: "Up to 4 sequences where generation stops. One per line.",
+	placeholder: "e.g. In conclusion",
+	help: "The reply ends as soon as the model writes one of these words or phrases, and the phrase itself is left out. Put each one on its own line, up to 4.",
 };
+// Not shown in the app; kept so the Worker's validation is unchanged.
 const responseFormat = (options) => ({
 	key: "response_format",
 	label: "Response format",
-	group: "Output",
+	hidden: true,
 	type: "format",
 	options,
-	help: "Specifies the format the model must output. Use Advanced JSON for json_schema.",
 });
+const biasHelp = (max) =>
+	`Makes specific tokens more or less likely. Enter JSON that pairs a token ID with a number from -100 to ${max}. Small numbers nudge the odds; -100 should ban that token outright. Each model numbers its tokens differently.`;
 const logitBias = {
 	key: "logit_bias",
 	label: "Logit bias",
-	group: "Output",
+	group: "Word choice",
 	type: "bias",
-	help: "Maps token IDs to bias values from -100 to 100, as JSON.",
+	placeholder: 'e.g. {"1234": -100}',
+	help: biasHelp(100),
 };
-const reasoningEffort = (options, def, extra = {}) => ({
+const REASONING_HELP = "How much the model thinks before it answers. Higher levels think longer, which takes more time and more tokens.";
+const ALWAYS_THINKS = "This model always thinks; it can't be turned off.";
+const THINKING_TOGGLE = "To skip thinking, turn Thinking off.";
+const reasoningEffort = (options, def, tail, extra = {}) => ({
 	key: "reasoning_effort",
 	label: "Reasoning effort",
-	group: "Reasoning",
+	group: "Thinking",
 	type: "enum",
 	options,
 	default: def,
+	help: `${REASONING_HELP} ${tail}`,
 	...extra,
 });
+const THINKING_HELP = "Lets the model think a problem through before answering. You can open its thinking above the reply. Turn it off for faster replies.";
 const enableThinking = (extra = {}) => ({
 	key: "enable_thinking",
 	path: "chat_template_kwargs",
 	label: "Thinking",
-	group: "Reasoning",
+	group: "Thinking",
 	type: "boolean",
 	default: true,
-	help: "Whether to enable reasoning for this model.",
+	help: THINKING_HELP,
 	...extra,
 });
 // Request overrides applied in voice mode (model.voiceParams), so the first words are spoken sooner.
@@ -119,15 +137,15 @@ const THINKING_OFF = { chat_template_kwargs: { enable_thinking: false } };
 const lowEffort = {
 	key: "low_effort",
 	path: "chat_template_kwargs",
-	label: "Low effort",
-	group: "Reasoning",
+	label: "Low-effort thinking",
+	group: "Thinking",
 	type: "boolean",
 	default: false,
-	help: "When Thinking is on, use Nemotron's low-effort reasoning mode, which uses significantly fewer reasoning tokens.",
+	help: "When Thinking is on, the model thinks more briefly and uses far fewer tokens.",
 };
 
-// Schema fields of the OpenAI-compatible chat models that have no dedicated control.
-// They are accepted from the Advanced JSON box and passed through unchanged.
+// Schema fields of the OpenAI-compatible chat models that have no control in the app.
+// The Worker accepts them in params and passes them through unchanged.
 const CHAT_EXTRA_KEYS = [
 	"audio",
 	"function_call",
@@ -149,7 +167,7 @@ const CHAT_EXTRA_KEYS = [
 ];
 
 // Every chat model rejects top_p 0 (HTTP 400, 500 on Nemotron), whatever its schema says.
-const TOP_P_FLOOR = { min: 0.001, note: "The service rejects 0." };
+const TOP_P_FLOOR = { min: 0.001 };
 
 // options.seed = false leaves seed out for models where repeated runs with the same seed did not match.
 const chatControls = (context, reasoning, options = {}) => [
@@ -165,45 +183,40 @@ const chatControls = (context, reasoning, options = {}) => [
 	logitBias,
 ];
 
+const UNUSABLE_ABOVE_2 = "You can go up to 5, but replies turned to nonsense above about 2 in testing.";
+
 // Controls for models on the older Workers AI schema (top_k and repetition_penalty instead of the
-// OpenAI-style extras), which differ per model in the ranges below.
+// OpenAI-style extras), which differ per model in the ranges below. Their schemas document no default
+// for top_p, top_k or the penalties.
 const olderControls = ({ reasoning = [], temp, penalties = [frequencyPenalty, presencePenalty], repetition = {}, max, formats = ["json_object"], bias = [] }) => [
 	...reasoning,
-	temperature({
-		default: 0.6,
-		help: "Controls the randomness of the output; higher values produce more random results.",
-		...temp,
-	}),
-	topP({
-		min: 0.001,
-		default: undefined,
-		help: "Lower values make outputs more predictable; higher values allow for more varied responses.",
-	}),
+	temperature({ default: 0.6, ...temp }),
+	topP({ min: 0.001, default: undefined }),
 	{
 		key: "top_k",
 		label: "Top K",
-		group: "Sampling",
+		group: "Randomness",
 		type: "integer",
 		min: 1,
 		max: 50,
-		help: "Limits the model to choose from the top k most probable tokens.",
+		help: "Limits the model to this many of its most likely next tokens at each step. Lower values make replies more focused; higher values allow more variety.",
 	},
-	...penalties,
+	...penalties.map((p) => ({ ...p, default: undefined })),
 	{
 		key: "repetition_penalty",
 		label: "Repetition penalty",
-		group: "Sampling",
+		group: "Word choice",
 		type: "number",
 		// The service rejects 0.
 		min: 0.05,
 		max: 2,
 		step: 0.05,
-		help: "Penalty for repeated tokens; higher values discourage repetition.",
+		help: "Makes the model less likely to repeat words. Higher values push harder against repetition; lower values allow more.",
 		...repetition,
 	},
 	max,
 	stop,
-	seed({ min: 1, max: 9999999999, help: "Random seed for reproducibility of the generation." }),
+	seed({ min: 1, max: 9999999999 }),
 	...(formats.length ? [responseFormat(formats)] : []),
 	...bias,
 ];
@@ -218,11 +231,7 @@ export const MODELS = [
 		vision: true,
 		context: 1048576,
 		price: [0.15, 0.5],
-		controls: chatControls(
-			1048576,
-			[reasoningEffort(["max", "high", "low"], "max", { help: "Reasoning cannot be disabled for this model." })],
-			{ seed: false },
-		),
+		controls: chatControls(1048576, [reasoningEffort(["max", "high", "low"], "max", ALWAYS_THINKS)], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
@@ -244,8 +253,8 @@ export const MODELS = [
 		context: 131000,
 		price: [0.017, 0.112],
 		controls: olderControls({
-			temp: { max: 5, note: "The service accepts up to 5, but output was unusable above about 2 in testing." },
-			max: maxTokens(131000),
+			temp: { max: 5, note: UNUSABLE_ABOVE_2 },
+			max: maxTokens(131000, DEFAULT_MAX_TOKENS, { help: MAX_TOKENS_HELP }),
 		}),
 		extraKeys: OLDER_EXTRA_KEYS,
 	},
@@ -257,13 +266,13 @@ export const MODELS = [
 		context: 128000,
 		price: [0.2, 0.3],
 		controls: olderControls({
-			reasoning: [reasoningEffort(["low", "medium", "high"], "medium", { help: "Reasoning cannot be disabled for this model." })],
+			reasoning: [reasoningEffort(["low", "medium", "high"], "medium", ALWAYS_THINKS)],
 			// Outside these limits replies came back empty or as garbage with leaked format tokens.
 			temp: { max: 1 },
 			repetition: { min: 0.7 },
 			max: maxTokens(128000),
 			formats: [],
-			bias: [{ ...logitBias, max: 30, help: "Maps token IDs to bias values from -100 to 30, as JSON." }],
+			bias: [{ ...logitBias, max: 30, help: biasHelp(30) }],
 		}),
 		extraKeys: OLDER_EXTRA_KEYS,
 	},
@@ -276,9 +285,11 @@ export const MODELS = [
 		price: [0.293, 2.253],
 		defaultMaxTokens: 4096,
 		controls: olderControls({
-			temp: { note: "The schema allows up to 5; the service rejects values above 2." },
+			// The schema allows up to 5; the service rejects values above 2.
+			temp: {},
 			max: maxTokens(24000, 4096, {
-				note: "The prompt and the output together must fit in the 24,000-token context window; the service rejects a request otherwise.",
+				help: MAX_TOKENS_HELP,
+				note: "This model can take 24,000 tokens in total, counting the whole chat and the reply. If the chat plus this limit adds up to more, the request fails.",
 			}),
 		}),
 		extraKeys: OLDER_EXTRA_KEYS,
@@ -291,7 +302,7 @@ export const MODELS = [
 		context: 128000,
 		price: [0.35, 0.75],
 		controls: olderControls({
-			reasoning: [reasoningEffort(["low", "medium", "high"], "medium", { help: "Reasoning cannot be disabled for this model." })],
+			reasoning: [reasoningEffort(["low", "medium", "high"], "medium", ALWAYS_THINKS)],
 			// Outside these limits replies came back empty, as garbage with leaked format tokens, or as a stream error.
 			temp: { max: 1.2 },
 			repetition: { min: 0.7 },
@@ -308,12 +319,13 @@ export const MODELS = [
 		context: 128000,
 		price: [0.351, 0.555],
 		controls: olderControls({
-			temp: { max: 5, default: 0.15, note: "The service accepts up to 5, but output was unusable above about 2 in testing." },
+			temp: { max: 5, default: 0.15, note: UNUSABLE_ABOVE_2 },
+			// This model rejects negative penalties.
 			penalties: [
-				{ ...frequencyPenalty, min: 0, note: "This model rejects negative values." },
-				{ ...presencePenalty, min: 0, note: "This model rejects negative values." },
+				{ ...frequencyPenalty, min: 0, help: FREQUENCY_HELP },
+				{ ...presencePenalty, min: 0, help: PRESENCE_HELP },
 			],
-			max: maxTokens(128000),
+			max: maxTokens(128000, DEFAULT_MAX_TOKENS, { help: MAX_TOKENS_HELP }),
 		}),
 		extraKeys: OLDER_EXTRA_KEYS,
 	},
@@ -325,11 +337,7 @@ export const MODELS = [
 		context: 1048576,
 		price: [0.44, 1.32],
 		voiceParams: THINKING_OFF,
-		controls: chatControls(
-			1048576,
-			[reasoningEffort(["max", "high", "low"], "high", { help: "Turn Thinking off to disable reasoning." }), enableThinking()],
-			{ seed: false },
-		),
+		controls: chatControls(1048576, [reasoningEffort(["max", "high", "low"], "high", THINKING_TOGGLE), enableThinking()], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
@@ -340,13 +348,7 @@ export const MODELS = [
 		context: 262144,
 		price: [0.45, 3.2],
 		voiceParams: THINKING_OFF,
-		controls: chatControls(
-			262144,
-			[
-				reasoningEffort(["xhigh", "medium", "low"], "xhigh", { help: "Turn Thinking off to disable reasoning." }),
-				enableThinking(),
-			],
-		),
+		controls: chatControls(262144, [reasoningEffort(["xhigh", "medium", "low"], "xhigh", THINKING_TOGGLE), enableThinking()]),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
@@ -359,13 +361,10 @@ export const MODELS = [
 		voiceParams: THINKING_OFF,
 		// With Thinking off the service streams the reply in the reasoning field; the Worker moves it into content.
 		replyInReasoningWhenThinkingOff: true,
-		controls: chatControls(
-			256000,
-			[
-				enableThinking({ help: "Reasoning is on by default. This model has no reasoning effort field; use Low effort instead." }),
-				lowEffort,
-			],
-		),
+		controls: chatControls(256000, [
+			enableThinking({ help: `${THINKING_HELP} This model has no Reasoning effort setting; use Low-effort thinking to make it think less.` }),
+			lowEffort,
+		]),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
@@ -376,7 +375,7 @@ export const MODELS = [
 		context: 262144,
 		price: [0.95, 4],
 		voiceParams: { reasoning_effort: "none" },
-		controls: chatControls(262144, [reasoningEffort(["high", "none"], "high", { help: "“none” disables reasoning." })], { seed: false }),
+		controls: chatControls(262144, [reasoningEffort(["high", "none"], "high", "Choose None to skip thinking.")], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
@@ -397,11 +396,7 @@ export const MODELS = [
 		context: 1048576,
 		price: [1.32, 3.96],
 		voiceParams: THINKING_OFF,
-		controls: chatControls(
-			1048576,
-			[reasoningEffort(["max", "high", "low"], "high", { help: "Turn Thinking off to disable reasoning." }), enableThinking()],
-			{ seed: false },
-		),
+		controls: chatControls(1048576, [reasoningEffort(["max", "high", "low"], "high", THINKING_TOGGLE), enableThinking()], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
@@ -411,11 +406,7 @@ export const MODELS = [
 		vision: false,
 		context: 1048576,
 		price: [1.4, 4.4],
-		controls: chatControls(
-			1048576,
-			[reasoningEffort(["max", "high", "low"], "max", { help: "Reasoning cannot be disabled for this model." })],
-			{ seed: false },
-		),
+		controls: chatControls(1048576, [reasoningEffort(["max", "high", "low"], "max", ALWAYS_THINKS)], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 ];

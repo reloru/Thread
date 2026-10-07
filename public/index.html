@@ -15,6 +15,7 @@
 	<link rel="manifest" href="/manifest.webmanifest">
 	<link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
 	<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+	<script src="/theme.js"></script>
 	<link rel="stylesheet" href="/style.css">
 	<script type="module" src="/app.js"></script>
 </head>
@@ -31,7 +32,6 @@
 		<symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
 		<symbol id="i-redo" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></symbol>
 		<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
-		<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
 		<symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
 		<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
 		<symbol id="i-gear" viewBox="0 0 24 24"><path d="M18.84 10.50 L21.13 10.85 L21.13 13.15 L18.84 13.50 L17.90 15.77 L19.27 17.64 L17.64 19.27 L15.77 17.90 L13.50 18.84 L13.15 21.13 L10.85 21.13 L10.50 18.84 L8.23 17.90 L6.36 19.27 L4.73 17.64 L6.10 15.77 L5.16 13.50 L2.87 13.15 L2.87 10.85 L5.16 10.50 L6.10 8.23 L4.73 6.36 L6.36 4.73 L8.23 6.10 L10.50 5.16 L10.85 2.87 L13.15 2.87 L13.50 5.16 L15.77 6.10 L17.64 4.73 L19.27 6.36 L17.90 8.23Z"/><circle cx="12" cy="12" r="3"/></symbol>
@@ -102,7 +102,7 @@
 		</div>
 		<nav class="chat-list" id="chatList"></nav>
 		<div class="drawer-foot">
-			<button type="button" class="text-btn" id="lockBtn"><svg><use href="#i-lock"/></svg>Lock</button>
+			<button type="button" class="text-btn" id="prefsBtn"><svg><use href="#i-gear"/></svg>Settings</button>
 		</div>
 	</aside>
 
@@ -126,6 +126,16 @@
 			<button type="button" class="text-link" id="settingsReset">Reset</button>
 		</header>
 		<div class="settings-body" id="settingsBody"></div>
+	</div>
+
+	<div class="settings" id="prefs" role="dialog" aria-modal="true" aria-labelledby="prefsTitle" inert>
+		<header class="settings-head">
+			<button type="button" class="icon-btn" id="prefsBack" aria-label="Back to chats"><svg><use href="#i-back"/></svg></button>
+			<div class="settings-title">
+				<span id="prefsTitle">Settings</span>
+			</div>
+		</header>
+		<div class="settings-body" id="prefsBody"></div>
 	</div>
 
 	<div class="voice" id="voice" role="dialog" aria-modal="true" aria-label="Voice chat" inert>

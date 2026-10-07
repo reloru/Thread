@@ -1,18 +1,18 @@
-import { ParamError, allowedKeys, hasCustom, toWire } from "./params.js";
+import { ParamError, hasCustom, toWire } from "./params.js";
 
 const KEY_PARAMS = "thread.params";
-const KEY_INSTRUCTIONS = "thread.instructions";
-const GROUPS = ["Reasoning", "Sampling", "Output"];
+const GROUPS = ["Reply length", "Thinking", "Randomness", "Word choice"];
 const NOT_SET = "–";
+// Display names for option values; the values sent are unchanged.
+const OPTION_LABELS = { max: "Max", xhigh: "Extra high", high: "High", medium: "Medium", low: "Low", none: "None" };
 
 /**
- * Per-model parameter settings and instructions.
- * deps: { storage, el, icon, getChat, onChatInstructions }
+ * Per-model parameter settings.
+ * deps: { storage, el, icon }
  */
 export function createSettings(deps) {
 	const { storage, el, icon } = deps;
 	let all = read();
-	let globalText = storage.get(KEY_INSTRUCTIONS) || "";
 
 	function read() {
 		try {
@@ -37,23 +37,15 @@ export function createSettings(deps) {
 		save();
 	}
 
-	function globalInstructions() {
-		return globalText;
-	}
-
 	return {
 		hasCustom: (id) => hasCustom(all[id]),
 		/** Validated wire params for a model. Throws ParamError. */
 		params: (model) => toWire(model, all[model.id]),
-		instructionsFor(chat) {
-			return (chat?.instructions || "").trim() || globalInstructions().trim();
-		},
 		reset(id) {
 			delete all[id];
 			save();
 		},
 		render(container, model) {
-			const chat = deps.getChat();
 			const status = el("p", "settings-status");
 			const validate = () => {
 				try {
@@ -74,55 +66,15 @@ export function createSettings(deps) {
 			};
 
 			const nodes = [];
-
-			const instr = section("Instructions");
-			const globalBox = textarea("instr-global", 3, "Applies to every chat. E.g. “Be concise. Use metric units.”");
-			globalBox.value = globalInstructions();
-			globalBox.addEventListener("input", () => {
-				globalText = globalBox.value;
-				storage.set(KEY_INSTRUCTIONS, globalText);
-			});
-			const chatBox = textarea("instr-chat", 2, "Leave empty to use the instructions above");
-			chatBox.value = chat?.instructions || "";
-			chatBox.addEventListener("input", () => deps.onChatInstructions(chatBox.value));
-			instr.append(
-				fieldLabel("All chats", "instr-global"),
-				globalBox,
-				fieldLabel("This chat only", "instr-chat"),
-				chatBox,
-				hint("Sent as the system message. This chat’s text replaces the all-chats text."),
-			);
-			nodes.push(instr);
-
 			const values = all[model.id]?.values || {};
-			const unsetNote = hint(`A ${NOT_SET} means the field is left out of the request and the model uses its own default. Max output tokens is the exception: the app always sends a limit, because some models stop after 256 tokens without one.`);
-			unsetNote.classList.add("settings-note");
-			nodes.push(unsetNote);
 			for (const group of GROUPS) {
-				const controls = model.controls.filter((c) => c.group === group);
+				const controls = model.controls.filter((c) => c.group === group && !c.hidden);
 				if (!controls.length) continue;
 				const sec = section(group);
 				for (const c of controls) sec.append(control(c, values[c.key], commit));
 				nodes.push(sec);
 			}
-
-			const adv = section("Advanced JSON");
-			const jsonBox = textarea("param-json", 5, '{"n": 1}');
-			jsonBox.classList.add("mono");
-			jsonBox.spellcheck = false;
-			jsonBox.autocapitalize = "off";
-			jsonBox.value = all[model.id]?.json || "";
-			jsonBox.addEventListener("input", () => {
-				entry(model.id).json = jsonBox.value;
-				prune(model.id);
-				validate();
-			});
-			adv.append(
-				hint("Any parameter this model accepts, sent as-is. Fields here override the controls above."),
-				jsonBox,
-				hint(`Accepted keys: ${allowedKeys(model).join(", ")}`),
-			);
-			nodes.push(adv, status);
+			nodes.push(status);
 
 			container.replaceChildren(...nodes);
 			validate();
@@ -169,9 +121,6 @@ export function createSettings(deps) {
 		reset.append(icon("i-redo"));
 		const showReset = (on) => reset.classList.toggle("off", !on);
 
-		// An empty field is not sent, so the model uses its own default. Fields the app always fills say what they send.
-		const emptyText = c.emptyLabel ?? NOT_SET;
-
 		if (c.type === "number" || c.type === "integer") {
 			const num = el("input", "num");
 			num.id = id;
@@ -180,7 +129,8 @@ export function createSettings(deps) {
 			if (c.min !== undefined) num.min = String(c.min);
 			if (c.max !== undefined) num.max = String(c.max);
 			num.step = c.type === "integer" ? "1" : String(c.step ?? "any");
-			num.placeholder = emptyText;
+			// An empty field shows, greyed out, what applies without a value of your own.
+			num.placeholder = c.default !== undefined ? formatOption(c.default) : (c.placeholder ?? NOT_SET);
 			if (value !== undefined) num.value = String(value);
 			head.append(num, reset);
 
@@ -194,6 +144,8 @@ export function createSettings(deps) {
 			num.addEventListener("focus", () => (atFocus = saved));
 
 			const useSlider = c.min !== undefined && c.max !== undefined && c.max - c.min <= 100;
+			// With no value of its own, the dimmed slider rests at the default, or mid-range when there is none.
+			const rest = () => String(c.default ?? (c.min + c.max) / 2);
 			let slider = null;
 			if (useSlider) {
 				slider = el("input", "slider");
@@ -201,7 +153,7 @@ export function createSettings(deps) {
 				slider.min = String(c.type === "integer" ? c.min : Math.floor(c.min / c.step + 1e-9) * c.step);
 				slider.max = String(c.max);
 				slider.step = c.type === "integer" ? "1" : String(c.step);
-				slider.value = String(value ?? c.default ?? c.min);
+				slider.value = value !== undefined ? String(value) : rest();
 				slider.setAttribute("aria-label", c.label);
 				slider.classList.toggle("unset", value === undefined);
 				slider.addEventListener("input", () => {
@@ -221,7 +173,7 @@ export function createSettings(deps) {
 					error.hidden = true;
 					showReset(false);
 					if (slider) {
-						slider.value = String(c.default ?? c.min);
+						slider.value = rest();
 						slider.classList.add("unset");
 					}
 					set(undefined);
@@ -244,7 +196,7 @@ export function createSettings(deps) {
 						set(atFocus);
 						showReset(atFocus !== undefined);
 						if (slider) {
-							slider.value = String(atFocus ?? c.default ?? c.min);
+							slider.value = atFocus !== undefined ? String(atFocus) : rest();
 							slider.classList.toggle("unset", atFocus === undefined);
 						}
 					}
@@ -264,35 +216,41 @@ export function createSettings(deps) {
 				num.dispatchEvent(new Event("input"));
 			});
 			showReset(value !== undefined);
-		} else if (c.type === "enum" || c.type === "boolean" || c.type === "format") {
+		} else if (c.type === "enum" || c.type === "boolean") {
 			const options = c.type === "boolean" ? [true, false] : c.options;
 			const seg = el("div", "segmented");
 			seg.setAttribute("role", "radiogroup");
 			seg.setAttribute("aria-label", c.label);
 			const buttons = [];
-			const select = (v) => {
-				for (const b of buttons) b.setAttribute("aria-checked", String(b._value === v));
+			// With no choice of its own, the default option shows selected in grey and nothing is sent.
+			const show = (v) => {
+				const shown = v === undefined ? c.default : v;
+				seg.classList.toggle("is-default", v === undefined);
+				for (const b of buttons) b.setAttribute("aria-checked", String(b._value === shown));
+				showReset(v !== undefined);
 			};
-			const add = (text, v) => {
-				const b = el("button", "seg", text);
+			for (const o of options) {
+				const b = el("button", "seg", formatOption(o));
 				b.type = "button";
 				b.setAttribute("role", "radio");
-				if (v === undefined) b.setAttribute("aria-label", "Not set");
-				b._value = v;
+				b._value = o;
 				b.addEventListener("click", () => {
-					select(v);
-					commit(c.key, v);
+					show(o);
+					commit(c.key, o);
 				});
 				buttons.push(b);
 				seg.append(b);
-			};
-			add(NOT_SET, undefined);
-			for (const o of options) add(formatOption(o), o);
-			select(value);
+			}
+			reset.addEventListener("click", () => {
+				show(undefined);
+				commit(c.key, undefined);
+			});
+			head.append(reset);
+			show(value);
 			label.removeAttribute("for");
 			field.append(seg);
 		} else {
-			const area = textarea(id, 2, c.type === "stop" ? "One per line" : '{"1234": -100}');
+			const area = textarea(id, 2, c.placeholder ?? "");
 			if (c.type === "bias") {
 				area.classList.add("mono");
 				area.spellcheck = false;
@@ -303,9 +261,7 @@ export function createSettings(deps) {
 			field.append(area);
 		}
 
-		const modelDefault = c.default === undefined || c.emptyLabel ? "" : `Model default: ${formatOption(c.default)}.`;
-		const text = [c.help, modelDefault].filter(Boolean).join(" ");
-		if (text) field.append(hint(text));
+		if (c.help) field.append(hint(c.help));
 		if (c.note) field.append(el("p", "note", c.note));
 		field.append(error);
 		return field;
@@ -315,5 +271,5 @@ export function createSettings(deps) {
 function formatOption(v) {
 	if (v === true) return "On";
 	if (v === false) return "Off";
-	return String(v);
+	return OPTION_LABELS[v] ?? String(v);
 }
