@@ -1,7 +1,10 @@
 // Notifications: a card that asks once (iPhone shows the permission prompt only in response to a tap), the
-// push subscription for this device, and keeping it registered with the Worker. sw.js shows what arrives.
+// on/off switch in Settings, the push subscription for this device, and keeping it registered with the
+// Worker. sw.js shows what arrives.
 
 const KEY_LATER = "thread.notify.later";
+// Set when notifications are switched off in Settings. The browser permission stays; the Worker stops sending.
+const KEY_OFF = "thread.notify.off";
 const LATER_MS = 7 * 24 * 60 * 60 * 1000;
 
 const decodeKey = (b64url) => {
@@ -13,8 +16,9 @@ const decodeKey = (b64url) => {
 export function createNotify(deps) {
 	const { storage, api, toast, card } = deps;
 	const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+	const isOff = () => storage.get(KEY_OFF) === "1";
 
-	// welcome: ask the Worker for a test notification (after the user just allowed them).
+	// welcome: ask the Worker for a test notification (after the user just turned them on).
 	async function register(welcome = false) {
 		await navigator.serviceWorker.register("/sw.js");
 		const reg = await navigator.serviceWorker.ready;
@@ -33,16 +37,26 @@ export function createNotify(deps) {
 		if (!res.ok) throw new Error("The server did not accept the subscription.");
 	}
 
-	deps.allow.addEventListener("click", () => {
+	function unsubscribe() {
+		api("/api/push/unsubscribe", { method: "POST" }).catch(() => {});
+	}
+
+	/** Must be called from a tap: the permission prompt is requested before any other await. */
+	async function enable() {
 		card.hidden = true;
-		// Requested directly in the tap handler, before any other await.
-		Notification.requestPermission()
-			.then((permission) => {
-				if (permission !== "granted") return;
-				return register(true).then(() => toast("Notifications are on"));
-			})
-			.catch(() => toast("Couldn't turn on notifications"));
-	});
+		storage.del(KEY_OFF);
+		try {
+			const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+			if (permission !== "granted") return;
+			await register(true);
+			toast("Notifications are on");
+		} catch {
+			storage.set(KEY_OFF, "1");
+			toast("Couldn't turn on notifications");
+		}
+	}
+
+	deps.allow.addEventListener("click", () => enable());
 	deps.later.addEventListener("click", () => {
 		card.hidden = true;
 		storage.set(KEY_LATER, String(Date.now() + LATER_MS));
@@ -52,13 +66,24 @@ export function createNotify(deps) {
 		/** After sign-in: keeps an allowed device subscribed, or shows the card if it was never asked. */
 		start() {
 			if (!supported) return;
-			if (Notification.permission === "granted") register().catch(() => {});
-			else if (Notification.permission === "default" && !(Number(storage.get(KEY_LATER)) > Date.now())) card.hidden = false;
+			if (Notification.permission === "granted") {
+				// Switched off: repeated in case the request made when switching off did not get through.
+				if (isOff()) unsubscribe();
+				else register().catch(() => {});
+			} else if (Notification.permission === "default" && !isOff() && !(Number(storage.get(KEY_LATER)) > Date.now())) {
+				card.hidden = false;
+			}
 		},
-		/** Before signing this device out: stops alerts to it. */
-		signOut() {
-			card.hidden = true;
-			if (supported && Notification.permission === "granted") api("/api/push/unsubscribe", { method: "POST" }).catch(() => {});
+		/** "unsupported", "blocked" (denied in the browser or system), "on" or "off". */
+		status() {
+			if (!supported) return "unsupported";
+			if (Notification.permission === "denied") return "blocked";
+			return Notification.permission === "granted" && !isOff() ? "on" : "off";
+		},
+		enable,
+		disable() {
+			storage.set(KEY_OFF, "1");
+			unsubscribe();
 		},
 	};
 }

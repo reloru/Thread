@@ -17,8 +17,9 @@
 	color-scheme: light dark;
 }
 
+/* Dark follows the system unless Settings chose Light; a Dark choice applies whatever the system uses (theme.js). */
 @media (prefers-color-scheme: dark) {
-	:root {
+	:root:not([data-theme="light"]) {
 		--bg: #0e0e11;
 		--surface: #19191e;
 		--surface-2: #24242b;
@@ -34,6 +35,25 @@
 		--shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
 	}
 }
+
+:root[data-theme="dark"] {
+	--bg: #0e0e11;
+	--surface: #19191e;
+	--surface-2: #24242b;
+	--text: #ececf1;
+	--muted: #9c9ca8;
+	--faint: #686873;
+	--border: #26262d;
+	--accent: #8f82ff;
+	--user-bubble: #212128;
+	--code-bg: #141418;
+	--danger: #ff6369;
+	--scrim: rgba(0, 0, 0, 0.55);
+	--shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+	color-scheme: dark;
+}
+
+:root[data-theme="light"] { color-scheme: light; }
 
 * { box-sizing: border-box; }
 
@@ -809,7 +829,7 @@ svg {
 	font-variant-numeric: tabular-nums;
 	outline: 0;
 }
-.num::placeholder { color: var(--faint); font-size: 13px; }
+.num::placeholder { color: var(--faint); }
 .num:focus { border-color: var(--accent); }
 
 .field-reset {
@@ -853,6 +873,9 @@ svg {
 	font-weight: 560;
 }
 .seg[aria-checked="true"] { background: var(--bg); color: var(--text); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); }
+/* No choice of its own: the row is greyed out and the default option shows selected. */
+.segmented.is-default .seg { color: var(--faint); }
+.segmented.is-default .seg[aria-checked="true"] { box-shadow: none; }
 
 .set-text {
 	display: block;
@@ -873,7 +896,6 @@ svg {
 .set-text::placeholder { color: var(--faint); }
 .set-text.mono { font-family: var(--mono); }
 
-.settings-note { margin: 12px 0 0; padding-bottom: 4px; }
 .hint { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 .note { margin: 6px 0 0; color: color-mix(in srgb, var(--accent) 75%, var(--text)); font-size: 13px; line-height: 1.45; }
 .field-error { margin: 6px 0 0; color: var(--danger); font-size: 13px; }
@@ -1074,6 +1096,8 @@ svg {
 }
 .switch-row[aria-checked="true"] .switch { background: var(--accent); }
 .switch-row[aria-checked="true"] .switch::after { transform: translateX(18px); }
+.switch-row:disabled { cursor: default; }
+.switch-row:disabled .switch { opacity: 0.45; }
 
 .voice-list { display: flex; flex-direction: column; }
 .voice-row { display: flex; align-items: center; gap: 4px; padding-right: 6px; border-radius: 14px; }

@@ -21,7 +21,34 @@ test("every model's controls have unique keys and valid groups", () => {
 	for (const m of MODELS) {
 		const keys = m.controls.map((c) => `${c.path || ""}.${c.key}`);
 		assert.equal(new Set(keys).size, keys.length, m.id);
-		for (const c of m.controls) assert.ok(["Reasoning", "Sampling", "Output"].includes(c.group), `${m.id} ${c.key}`);
+		for (const c of m.controls) {
+			if (c.hidden) continue;
+			assert.ok(["Reply length", "Thinking", "Randomness", "Word choice"].includes(c.group), `${m.id} ${c.key}`);
+		}
+	}
+});
+
+// The settings page shows these greyed out in empty fields. Max output tokens is what the Worker sends; every
+// other value is the default in the model's Workers AI schema (GET /ai/models/schema, read 2026-10-07).
+test("display defaults match what applies when a field is empty", () => {
+	const defaults = (m) => Object.fromEntries(m.controls.filter((c) => c.default !== undefined).map((c) => [c.key, c.default]));
+	const chat = { temperature: 1, top_p: 1, frequency_penalty: 0, presence_penalty: 0, max_completion_tokens: 16384 };
+	assert.deepEqual(defaults(GLM), { reasoning_effort: "max", ...chat });
+	assert.deepEqual(defaults(GEMMA), { enable_thinking: true, ...chat });
+	assert.deepEqual(defaults(DEEPSEEK_PRO), { reasoning_effort: "high", enable_thinking: true, ...chat });
+	assert.deepEqual(defaults(QWEN), { reasoning_effort: "xhigh", enable_thinking: true, ...chat });
+	assert.deepEqual(defaults(NEMOTRON), { enable_thinking: true, low_effort: false, ...chat });
+	assert.deepEqual(defaults(KIMI), { reasoning_effort: "high", ...chat });
+	assert.deepEqual(defaults(KIMI_CODE), chat);
+	// The older schema documents no default for top_p, top_k or the penalties.
+	assert.deepEqual(defaults(GRANITE), { temperature: 0.6, max_completion_tokens: 16384 });
+	assert.deepEqual(defaults(LLAMA), { temperature: 0.6, max_completion_tokens: 4096 });
+	assert.deepEqual(defaults(MISTRAL), { temperature: 0.15, max_completion_tokens: 16384 });
+	assert.deepEqual(defaults(OSS), { reasoning_effort: "medium", temperature: 0.6, max_completion_tokens: 16384 });
+	assert.deepEqual(defaults(OSS20), { reasoning_effort: "medium", temperature: 0.6, max_completion_tokens: 16384 });
+	for (const m of MODELS) {
+		assert.equal(defaults(m).max_completion_tokens, m.defaultMaxTokens ?? 16384, m.id);
+		assert.ok(m.controls.find((c) => c.key === "response_format")?.hidden ?? true, m.id);
 	}
 });
 
@@ -264,7 +291,7 @@ test("controls that had no measurable effect are not offered", () => {
 	const seeded = MODELS.filter((m) => keys(m).includes("seed")).map((m) => m.name).sort();
 	assert.deepEqual(seeded, ["Granite 4.0 Micro", "Llama 3.3 70B", "Mistral Small 3.1", "Nemotron 3 120B", "Qwen 3.8 27B", "gpt-oss-120b", "gpt-oss-20b"]);
 	assert.ok(!keys(KIMI).includes("enable_thinking"));
-	assert.deepEqual(keys(KIMI_CODE).filter((k) => KIMI_CODE.controls.find((c) => c.key === k).group === "Reasoning"), []);
+	assert.deepEqual(keys(KIMI_CODE).filter((k) => KIMI_CODE.controls.find((c) => c.key === k).group === "Thinking"), []);
 });
 
 test("Kimi K2.7 Code: no reasoning controls, since effort levels made no difference", () => {
