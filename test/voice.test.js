@@ -47,6 +47,8 @@ function makeEnv(handlers = {}, overrides = {}) {
 		calls,
 		env: {
 			PASSCODE: PASS,
+			// Passcode check without lockout; lockout has its own tests.
+			GUARD: { getByName: () => ({ attempt: async (ip, ok) => ({ allowed: ok }) }) },
 			AI_GATEWAY_ID: "",
 			ASSETS: { fetch: () => new Response("asset") },
 			AI: {

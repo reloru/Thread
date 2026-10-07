@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { timingSafeEqual } from "node:crypto";
 import worker, { sanitizeMessages } from "../src/worker.js";
 import { MODELS } from "../src/models.js";
+import { attempt } from "../src/lockout.js";
 
 // Workers-only Web Crypto extension.
 crypto.subtle.timingSafeEqual ??= (a, b) => timingSafeEqual(new Uint8Array(a), new Uint8Array(b));
@@ -12,12 +13,25 @@ const VISION = MODELS.find((m) => m.vision).id;
 const TEXT_ONLY = MODELS.find((m) => !m.vision).id;
 const IMG = "data:image/jpeg;base64,/9j/AAAA";
 
+// Durable Object storage subset used by the passcode guard.
+function memoryStorage() {
+	const map = new Map();
+	return {
+		get: async (k) => map.get(k),
+		put: async (k, v) => void map.set(k, structuredClone(v)),
+		delete: async (keys) => [keys].flat().forEach((k) => map.delete(k)),
+		list: async ({ prefix = "" } = {}) => new Map([...map].filter(([k]) => k.startsWith(prefix))),
+	};
+}
+
 function makeEnv(overrides = {}) {
 	const calls = [];
+	const storage = memoryStorage();
 	return {
 		calls,
 		env: {
 			PASSCODE: PASS,
+			GUARD: { getByName: () => ({ attempt: (ip, ok) => attempt(storage, ip, ok) }) },
 			AI_GATEWAY_ID: "default",
 			ASSETS: { fetch: () => new Response("asset") },
 			AI: {
@@ -36,10 +50,14 @@ function makeEnv(overrides = {}) {
 	};
 }
 
-const req = (path, { method = "GET", pass = PASS, body } = {}) =>
+const req = (path, { method = "GET", pass = PASS, body, ip } = {}) =>
 	new Request(`https://thread.test${path}`, {
 		method,
-		headers: { ...(pass ? { authorization: `Bearer ${pass}` } : {}), "content-type": "application/json" },
+		headers: {
+			...(pass ? { authorization: `Bearer ${pass}` } : {}),
+			...(ip ? { "cf-connecting-ip": ip } : {}),
+			"content-type": "application/json",
+		},
 		body: body === undefined ? undefined : JSON.stringify(body),
 	});
 
@@ -387,4 +405,86 @@ test("Nemotron with Thinking off: the reply the service streams as reasoning arr
 	assert.match(await post(nemotron, { params: { chat_template_kwargs: { enable_thinking: true } } }), /"reasoning":"Hello"/);
 	assert.match(await post(nemotron, {}), /"reasoning":"Hello"/);
 	assert.match(await post("@cf/qwen/qwen3.8-27b", off), /"reasoning":"Hello"/, "only models flagged for it are rewritten");
+});
+
+test("five wrong passcodes from one IP lock it out, right passcode included; other IPs still work", async () => {
+	const { env } = makeEnv();
+	const auth = (ip, pass) => worker.fetch(req("/api/auth", { method: "POST", pass, ip }), env);
+	for (let i = 0; i < 4; i++) assert.equal((await auth("203.0.113.9", "wrong")).status, 401);
+	const locked = await auth("203.0.113.9", "wrong");
+	assert.equal(locked.status, 429);
+	assert.equal(locked.headers.get("retry-after"), "900");
+	assert.equal((await locked.json()).error, "Too many wrong passcodes. Try again in 15 minutes.");
+	assert.equal((await auth("203.0.113.9", PASS)).status, 429);
+	assert.equal((await auth("198.51.100.4", PASS)).status, 204);
+	const models = await worker.fetch(req("/api/models", { ip: "203.0.113.9" }), env);
+	assert.equal(models.status, 429, "every endpoint checks the lock");
+});
+
+test("a correct passcode clears an IP's earlier failures", async () => {
+	const { env } = makeEnv();
+	const auth = (pass) => worker.fetch(req("/api/auth", { method: "POST", pass, ip: "203.0.113.7" }), env);
+	for (let i = 0; i < 4; i++) await auth("wrong");
+	assert.equal((await auth(PASS)).status, 204);
+	for (let i = 0; i < 4; i++) assert.equal((await auth("wrong")).status, 401);
+});
+
+test("chat responses carry the request start time for the usage counter", async () => {
+	const { env } = makeEnv();
+	const before = Date.now();
+	const res = await worker.fetch(req("/api/chat", { method: "POST", body: { model: VISION, messages: [{ role: "user", content: "x" }] } }), env);
+	const started = Number(res.headers.get("x-thread-started"));
+	assert.ok(started >= before && started <= Date.now());
+	const tools = await worker.fetch(
+		req("/api/chat", { method: "POST", body: { model: VISION, messages: [{ role: "user", content: "x" }], tools: ["web"] } }),
+		env,
+	);
+	assert.ok(Number(tools.headers.get("x-thread-started")) >= before);
+});
+
+test("usage: 503 until configured, then this month's neurons per day from GraphQL", async (t) => {
+	const { env } = makeEnv();
+	assert.equal((await worker.fetch(req("/api/usage"), env)).status, 503);
+
+	const sent = [];
+	t.mock.method(globalThis, "fetch", async (url, init) => {
+		sent.push({ url, init });
+		return Response.json({
+			data: {
+				viewer: {
+					accounts: [
+						{
+							days: [{ sum: { totalNeurons: 1234.5 }, dimensions: { date: "2026-10-01" } }],
+							latest: [{ datetime: "2026-10-01T09:00:00Z" }],
+						},
+					],
+				},
+			},
+		});
+	});
+	const configured = { ...env, USAGE_API_TOKEN: "token-1", USAGE_ACCOUNT_ID: "acct-usage-1" };
+	const res = await worker.fetch(req("/api/usage"), configured);
+	assert.equal(res.status, 200);
+	const data = await res.json();
+	assert.deepEqual(data.days, [{ date: "2026-10-01", neurons: 1234.5 }]);
+	assert.equal(data.through, "2026-10-01T09:00:00Z");
+	assert.equal(data.today, new Date().toISOString().slice(0, 10));
+	assert.equal(data.freeNeuronsPerDay, 10000);
+	assert.equal(data.usdPer1000Neurons, 0.011);
+	assert.equal(sent[0].url, "https://api.cloudflare.com/client/v4/graphql");
+	assert.equal(sent[0].init.headers.authorization, "Bearer token-1");
+	const vars = JSON.parse(sent[0].init.body).variables;
+	assert.equal(vars.account, "acct-usage-1");
+	assert.equal(vars.from, `${data.today.slice(0, 8)}01`);
+
+	await worker.fetch(req("/api/usage"), configured);
+	assert.equal(sent.length, 1, "repeat requests within 30 s are served from memory");
+});
+
+test("usage: GraphQL errors become 502", async (t) => {
+	const { env } = makeEnv({ USAGE_API_TOKEN: "token-2", USAGE_ACCOUNT_ID: "acct-usage-2" });
+	t.mock.method(globalThis, "fetch", async () => Response.json({ data: null, errors: [{ message: "not authorized" }] }));
+	const res = await worker.fetch(req("/api/usage"), env);
+	assert.equal(res.status, 502);
+	assert.match((await res.json()).error, /not authorized/);
 });

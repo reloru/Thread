@@ -33,11 +33,19 @@
 			{
 				"name": "SANDBOX",
 				"class_name": "Sandbox"
+			},
+			{
+				"name": "GUARD",
+				"class_name": "Guard"
 			}
 		]
 	},
 	"exports": {
 		"Sandbox": {
+			"type": "durable-object",
+			"storage": "sqlite"
+		},
+		"Guard": {
 			"type": "durable-object",
 			"storage": "sqlite"
 		}
@@ -77,6 +85,10 @@
 					{
 						"name": "SANDBOX",
 						"class_name": "Sandbox"
+					},
+					{
+						"name": "GUARD",
+						"class_name": "Guard"
 					}
 				]
 			},

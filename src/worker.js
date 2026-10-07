@@ -3,6 +3,7 @@ import { ParamError, isPlainObject, sanitizeParams } from "../public/params.js";
 import { agentStream, reasoningAsContent, sanitizeTools } from "./agent.js";
 import { HttpError, NO_STORE, aiOptions, json, readBytes, requireMethod } from "./http.js";
 import { VOICE_LANGS, speak, transcribe, turn, voiceConfig, voiceInstruction } from "./voice.js";
+import { usage } from "./usage.js";
 
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
 const MAX_MESSAGES = 400;
@@ -27,7 +28,7 @@ export default {
 		try {
 			return await api(request, env, url);
 		} catch (err) {
-			if (err instanceof HttpError) return json({ error: err.message }, err.status);
+			if (err instanceof HttpError) return json({ error: err.message }, err.status, err.headers);
 			if (err instanceof ParamError) return json({ error: err.message }, 400);
 			console.error("api error", err);
 			return json({ error: "Internal error" }, 500);
@@ -37,7 +38,14 @@ export default {
 
 async function api(request, env, url) {
 	if (!env.PASSCODE) throw new HttpError(503, "PASSCODE secret is not configured on the Worker.");
-	if (!(await authorized(request, env.PASSCODE))) throw new HttpError(401, "Unauthorized");
+	const ok = await authorized(request, env.PASSCODE);
+	const ip = request.headers.get("cf-connecting-ip") || "unknown";
+	const verdict = await env.GUARD.getByName("passcode").attempt(ip, ok);
+	if (verdict.until) {
+		const seconds = Math.max(1, Math.ceil((verdict.until - Date.now()) / 1000));
+		throw new HttpError(429, `Too many wrong passcodes. Try again in ${waitText(seconds)}.`, { "retry-after": String(seconds) });
+	}
+	if (!verdict.allowed) throw new HttpError(401, "Unauthorized");
 
 	switch (url.pathname) {
 		case "/api/auth":
@@ -64,12 +72,18 @@ async function api(request, env, url) {
 		case "/api/voice/speak":
 			requireMethod(request, "POST");
 			return speak(request, env);
+		case "/api/usage":
+			requireMethod(request, "GET");
+			return usage(env);
 		default:
 			throw new HttpError(404, "Not found");
 	}
 }
 
 async function chat(request, env) {
+	// Sent back as x-thread-started: the app files the reply's neurons under this time, which precedes every
+	// model request the reply makes, so the usage counter can tell which replies analytics already includes.
+	const started = Date.now();
 	const length = Number(request.headers.get("content-length") || 0);
 	if (length > MAX_BODY_BYTES) throw new HttpError(413, "Request too large.");
 
@@ -110,11 +124,10 @@ async function chat(request, env) {
 
 	const options = aiOptions(env);
 	const asContent = Boolean(model.replyInReasoningWhenThinkingOff && input.chat_template_kwargs?.enable_thinking === false);
+	const headers = { "content-type": "text/event-stream; charset=utf-8", "x-thread-started": String(started), ...NO_STORE };
 	if (tools.length) {
 		const stream = agentStream({ env, model: model.id, input, tools, chatId: body.chatId, options, asContent });
-		return new Response(stream, {
-			headers: { "content-type": "text/event-stream; charset=utf-8", ...NO_STORE },
-		});
+		return new Response(stream, { headers });
 	}
 	let stream;
 	try {
@@ -124,9 +137,7 @@ async function chat(request, env) {
 		throw new HttpError(502, `Model request failed: ${err?.message || String(err)}`);
 	}
 
-	return new Response(asContent ? reasoningAsContent(stream) : stream, {
-		headers: { "content-type": "text/event-stream; charset=utf-8", ...NO_STORE },
-	});
+	return new Response(asContent ? reasoningAsContent(stream) : stream, { headers });
 }
 
 async function convert(request, env) {
@@ -208,6 +219,13 @@ export function sanitizeInstructions(input) {
 	if (typeof input !== "string") throw new HttpError(400, "instructions must be a string.");
 	if (input.length > MAX_INSTRUCTIONS) throw new HttpError(400, `Instructions are limited to ${MAX_INSTRUCTIONS} characters.`);
 	return input.trim();
+}
+
+function waitText(seconds) {
+	const minutes = Math.ceil(seconds / 60);
+	if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+	const hours = Math.ceil(minutes / 60);
+	return `${hours} hour${hours === 1 ? "" : "s"}`;
 }
 
 async function readBody(request, limit) {
