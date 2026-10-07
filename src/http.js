@@ -32,6 +32,18 @@ export async function readBytes(request, limit, message) {
 	return bytes;
 }
 
+export function b64url(bytes) {
+	let binary = "";
+	for (const b of bytes) binary += String.fromCharCode(b);
+	return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** Decodes base64url (padding optional). Throws on invalid input. */
+export function fromB64url(text) {
+	const b64 = text.replace(/-/g, "+").replace(/_/g, "/");
+	return Uint8Array.from(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4)), (c) => c.charCodeAt(0));
+}
+
 // Workers AI run options: route through an AI Gateway when AI_GATEWAY_ID is set.
 export const aiOptions = (env) => (env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID } } : undefined);
 

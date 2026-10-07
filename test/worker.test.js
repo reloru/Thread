@@ -4,6 +4,8 @@ import { timingSafeEqual } from "node:crypto";
 import worker, { sanitizeMessages } from "../src/worker.js";
 import { MODELS } from "../src/models.js";
 import { attempt } from "../src/lockout.js";
+import { dropSubscription, listSubscriptions, saveSubscription } from "../src/push.js";
+import { ALERTS, LAST_TRY } from "../src/alerts.js";
 
 // Workers-only Web Crypto extension.
 crypto.subtle.timingSafeEqual ??= (a, b) => timingSafeEqual(new Uint8Array(a), new Uint8Array(b));
@@ -27,11 +29,20 @@ function memoryStorage() {
 function makeEnv(overrides = {}) {
 	const calls = [];
 	const storage = memoryStorage();
+	const guard = {
+		attempts: 0,
+		attempt: (ip, ok) => (guard.attempts++, attempt(storage, ip, ok)),
+		subscribe: (device, sub) => saveSubscription(storage, device, sub),
+		unsubscribe: (device) => dropSubscription(storage, device),
+		subscriptions: () => listSubscriptions(storage),
+	};
 	return {
 		calls,
+		guard,
 		env: {
 			PASSCODE: PASS,
-			GUARD: { getByName: () => ({ attempt: (ip, ok) => attempt(storage, ip, ok) }) },
+			SESSION_SECRET: "test-session-secret",
+			GUARD: { getByName: () => guard },
 			AI_GATEWAY_ID: "default",
 			ASSETS: { fetch: () => new Response("asset") },
 			AI: {
@@ -71,7 +82,9 @@ test("rejects missing or wrong passcode", async () => {
 	const { env } = makeEnv();
 	assert.equal((await worker.fetch(req("/api/models", { pass: null }), env)).status, 401);
 	assert.equal((await worker.fetch(req("/api/models", { pass: "nope" }), env)).status, 401);
-	assert.equal((await worker.fetch(req("/api/auth", { method: "POST" }), env)).status, 204);
+	const auth = await worker.fetch(req("/api/auth", { method: "POST" }), env);
+	assert.equal(auth.status, 200);
+	assert.match((await auth.json()).token, /^t1\.[\w-]{22}\.[\w-]{43}$/);
 });
 
 test("fails closed when PASSCODE is unset", async () => {
@@ -237,10 +250,10 @@ test("keeps only the most recent 24 images instead of failing", () => {
 test("accepts percent-encoded and non-Latin-1 passcodes", async () => {
 	const { env } = makeEnv({ PASSCODE: "pässwörd 50%" });
 	const encoded = encodeURIComponent("pässwörd 50%");
-	assert.equal((await worker.fetch(req("/api/auth", { method: "POST", pass: encoded }), env)).status, 204);
+	assert.equal((await worker.fetch(req("/api/auth", { method: "POST", pass: encoded }), env)).status, 200);
 	assert.equal((await worker.fetch(req("/api/auth", { method: "POST", pass: "x%E0%A4%A" }), env)).status, 401);
 	const ascii = makeEnv({ PASSCODE: "4b8j-fn5s-t774" });
-	assert.equal((await worker.fetch(req("/api/auth", { method: "POST", pass: "4b8j-fn5s-t774" }), ascii.env)).status, 204);
+	assert.equal((await worker.fetch(req("/api/auth", { method: "POST", pass: "4b8j-fn5s-t774" }), ascii.env)).status, 200);
 });
 
 test("enforces the body limit without a Content-Length header", async () => {
@@ -407,26 +420,107 @@ test("Nemotron with Thinking off: the reply the service streams as reasoning arr
 	assert.match(await post("@cf/qwen/qwen3.8-27b", off), /"reasoning":"Hello"/, "only models flagged for it are rewritten");
 });
 
-test("five wrong passcodes from one IP lock it out, right passcode included; other IPs still work", async () => {
-	const { env } = makeEnv();
-	const auth = (ip, pass) => worker.fetch(req("/api/auth", { method: "POST", pass, ip }), env);
-	for (let i = 0; i < 4; i++) assert.equal((await auth("203.0.113.9", "wrong")).status, 401);
-	const locked = await auth("203.0.113.9", "wrong");
-	assert.equal(locked.status, 429);
-	assert.equal(locked.headers.get("retry-after"), "900");
-	assert.equal((await locked.json()).error, "Too many wrong passcodes. Try again in 15 minutes.");
-	assert.equal((await auth("203.0.113.9", PASS)).status, 429);
-	assert.equal((await auth("198.51.100.4", PASS)).status, 204);
-	const models = await worker.fetch(req("/api/models", { ip: "203.0.113.9" }), env);
-	assert.equal(models.status, 429, "every endpoint checks the lock");
+const signIn = async (env, ip) => (await (await worker.fetch(req("/api/auth", { method: "POST", ip }), env)).json()).token;
+
+test("tokens: the passcode buys a token that works everywhere, without touching the lockout counts", async () => {
+	const { env, guard } = makeEnv();
+	const token = await signIn(env);
+	const before = guard.attempts;
+	assert.equal((await worker.fetch(req("/api/models", { pass: token }), env)).status, 200);
+	assert.equal(guard.attempts, before, "token requests skip the Durable Object");
+	const [, id, sig] = token.split(".");
+	const tampered = `t1.${id}.${sig[0] === "A" ? "B" : "A"}${sig.slice(1)}`;
+	assert.equal((await worker.fetch(req("/api/models", { pass: tampered }), env)).status, 401);
+	assert.equal((await worker.fetch(req("/api/models", { pass: token }), { ...env, PASSCODE: "new-pass" })).status, 401, "a new passcode signs devices out");
+	assert.equal((await worker.fetch(req("/api/models", { pass: token }), { ...env, SESSION_SECRET: "other" })).status, 401);
+	assert.equal((await worker.fetch(req("/api/models", { pass: token }), { ...env, SESSION_SECRET: undefined })).status, 503);
 });
 
-test("a correct passcode clears an IP's earlier failures", async () => {
+test("requests without credentials or with bad tokens are not counted as guesses", async () => {
+	const { env, guard } = makeEnv();
+	for (let i = 0; i < 6; i++) {
+		assert.equal((await worker.fetch(req("/api/models", { pass: null }), env)).status, 401);
+		assert.equal((await worker.fetch(req("/api/models", { pass: "t1.nope" }), env)).status, 401);
+	}
+	assert.equal(guard.attempts, 0);
+	assert.equal((await worker.fetch(req("/api/auth", { method: "POST" }), env)).status, 200);
+});
+
+test("lockout: the 4th wrong passcode in an hour warns and alerts, the 5th freezes logins for 8 hours; tokens keep working", async (t) => {
 	const { env } = makeEnv();
-	const auth = (pass) => worker.fetch(req("/api/auth", { method: "POST", pass, ip: "203.0.113.7" }), env);
-	for (let i = 0; i < 4; i++) await auth("wrong");
-	assert.equal((await auth(PASS)).status, 204);
-	for (let i = 0; i < 4; i++) assert.equal((await auth("wrong")).status, 401);
+	const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+	env.VAPID_JWK = JSON.stringify(await crypto.subtle.exportKey("jwk", pair.privateKey));
+	const token = await signIn(env);
+	const subscription = {
+		endpoint: "https://web.push.apple.com/abc",
+		keys: { p256dh: "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4", auth: "BTBZMqHH6r4Tts7J_aSIgg" },
+	};
+	const sub = await worker.fetch(new Request("https://thread.test/api/push/subscribe", {
+		method: "POST",
+		headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+		body: JSON.stringify(subscription),
+	}), env);
+	assert.equal(sub.status, 204);
+
+	const pushes = [];
+	t.mock.method(globalThis, "fetch", async (url, init) => {
+		pushes.push({ url, init });
+		return new Response(null, { status: 201 });
+	});
+	const waits = [];
+	const ctx = { waitUntil: (p) => waits.push(p) };
+	const guess = (ip) => worker.fetch(req("/api/auth", { method: "POST", pass: "wrong", ip }), env, ctx);
+
+	for (let i = 1; i <= 3; i++) assert.equal((await guess(`203.0.113.${i}`)).status, 401);
+	const fourth = await guess("203.0.113.4");
+	assert.equal(fourth.status, 401);
+	assert.equal((await fourth.json()).error, LAST_TRY);
+	await Promise.all(waits);
+	assert.equal(pushes.length, 1, "one alert for the one subscribed device");
+	assert.equal(pushes[0].url, subscription.endpoint);
+	assert.equal(pushes[0].init.headers["content-encoding"], "aes128gcm");
+	assert.match(pushes[0].init.headers.authorization, /^vapid t=[\w-]+\.[\w-]+\.[\w-]+, k=[\w-]+$/);
+
+	const fifth = await guess("203.0.113.5");
+	assert.equal(fifth.status, 429);
+	assert.equal(fifth.headers.get("retry-after"), "28800");
+	assert.equal((await fifth.json()).error, "Too many wrong passcodes, so logins are frozen for 8 hours. Go touch grass. 🌱");
+	await Promise.all(waits);
+	assert.equal(pushes.length, 2, "and one when logins freeze");
+
+	assert.equal((await worker.fetch(req("/api/auth", { method: "POST", ip: "198.51.100.4" }), env)).status, 429, "even the right passcode");
+	assert.equal((await worker.fetch(req("/api/models", { pass: token }), env)).status, 200, "signed-in devices are unaffected");
+	assert.ok(ALERTS.locked.body.includes("{until}"));
+});
+
+test("push: key needs VAPID_JWK, subscribing needs a token, push services that forget a device drop it", async (t) => {
+	const { env, guard } = makeEnv();
+	assert.equal((await worker.fetch(req("/api/push/key"), env)).status, 503);
+	const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+	env.VAPID_JWK = JSON.stringify(await crypto.subtle.exportKey("jwk", pair.privateKey));
+	const { key } = await (await worker.fetch(req("/api/push/key"), env)).json();
+	const raw = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey));
+	assert.equal(key, Buffer.from(raw).toString("base64url"));
+
+	const body = {
+		endpoint: "https://fcm.googleapis.com/fcm/send/x",
+		keys: { p256dh: "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4", auth: "BTBZMqHH6r4Tts7J_aSIgg" },
+	};
+	assert.equal((await worker.fetch(req("/api/push/subscribe", { method: "POST", body }), env)).status, 400, "passcode-only clients have no device id");
+	const token = await signIn(env);
+	const post = (path, payload) => worker.fetch(req(path, { method: "POST", pass: token, body: payload }), env);
+	assert.equal((await post("/api/push/subscribe", { ...body, endpoint: "http://x" })).status, 400);
+	assert.equal((await post("/api/push/subscribe", body)).status, 204);
+	assert.equal((await guard.subscriptions()).length, 1);
+
+	t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 410 }));
+	const { notifyAll } = await import("../src/alerts.js");
+	await notifyAll(env, guard, ALERTS.warning, "https://thread.test");
+	assert.equal((await guard.subscriptions()).length, 0);
+
+	assert.equal((await post("/api/push/subscribe", body)).status, 204);
+	assert.equal((await post("/api/push/unsubscribe")).status, 204);
+	assert.equal((await guard.subscriptions()).length, 0);
 });
 
 test("chat responses carry the request start time for the usage counter", async () => {

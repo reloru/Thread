@@ -3,6 +3,7 @@ import * as db from "./db.js";
 import { createSettings } from "./settings.js";
 import { createVoice } from "./voice.js";
 import { createUsage } from "./usage.js";
+import { createNotify } from "./notify.js";
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -28,6 +29,9 @@ const els = {
 	scrim: $("scrim"),
 	chatList: $("chatList"),
 	lockBtn: $("lockBtn"),
+	notifyCard: $("notifyCard"),
+	notifyAllow: $("notifyAllow"),
+	notifyLater: $("notifyLater"),
 	modelBtn: $("modelBtn"),
 	modelName: $("modelName"),
 	sheet: $("sheet"),
@@ -49,6 +53,8 @@ const els = {
 	app: $("app"),
 };
 
+const KEY_TOKEN = "thread.token";
+// Earlier versions stored the passcode itself; it is swapped for a sign-in token once, then removed.
 const KEY_PASS = "thread.passcode";
 const KEY_MODEL = "thread.model";
 const MAX_ATTACH = 4;
@@ -83,7 +89,7 @@ const storage = {
 };
 
 const state = {
-	passcode: storage.get(KEY_PASS),
+	token: storage.get(KEY_TOKEN),
 	models: [],
 	defaultModel: null,
 	model: storage.get(KEY_MODEL),
@@ -126,20 +132,40 @@ const voice = createVoice({
 	syncModal,
 });
 
-const usage = createUsage({ storage, el, api, canFetch: () => Boolean(state.passcode), button: els.usage });
+const usage = createUsage({ storage, el, api, canFetch: () => Boolean(state.token), button: els.usage });
+
+const notify = createNotify({ storage, api, toast, card: els.notifyCard, allow: els.notifyAllow, later: els.notifyLater });
 
 function init() {
 	fitViewport();
 	bindEvents();
 	els.input.enterKeyHint = COARSE ? "enter" : "send";
 	newChat();
-	if (!state.passcode) {
+	if (state.token) {
+		start();
+		return;
+	}
+	const saved = storage.get(KEY_PASS);
+	if (!saved) {
 		showLock();
 		return;
 	}
+	signIn(saved)
+		.then((result) => {
+			if (!result.status) start();
+			else showLock(result.status === 401 ? "Passcode is no longer valid." : result.error);
+		})
+		.catch(() => showLock("Network error. Enter the passcode to try again."));
+}
+
+// Runs once this device is signed in.
+function start() {
 	loadModels().catch(() => {});
 	renderChatList();
 	usage.start();
+	notify.start();
+	// Asks the browser not to clear this app's storage (and so its sign-in) when the device runs low on space.
+	navigator.storage?.persist?.().catch(() => {});
 }
 
 /* ---------- API ---------- */
@@ -147,15 +173,30 @@ function init() {
 async function api(path, options = {}) {
 	const res = await fetch(path, {
 		...options,
-		headers: { ...(options.headers || {}), authorization: bearer(state.passcode || "") },
+		headers: { ...(options.headers || {}), authorization: `Bearer ${state.token || ""}` },
 	});
 	if (res.status === 401) {
-		state.passcode = null;
-		storage.del(KEY_PASS);
-		showLock("Passcode is no longer valid.");
+		state.token = null;
+		storage.del(KEY_TOKEN);
+		showLock("Signed out. Enter the passcode again.");
 		throw new AuthError("Locked");
 	}
 	return res;
+}
+
+// Exchanges the passcode for this device's sign-in token. Returns {} or { status, error }.
+async function signIn(pass) {
+	const res = await fetch("/api/auth", { method: "POST", headers: { authorization: bearer(pass) } });
+	if (!res.ok) {
+		const error = await errorText(res);
+		if (res.status === 401) storage.del(KEY_PASS);
+		return { status: res.status, error };
+	}
+	const { token } = await res.json();
+	state.token = token;
+	storage.set(KEY_TOKEN, token);
+	storage.del(KEY_PASS);
+	return {};
 }
 
 // Header values must be ISO-8859-1, so the passcode is percent-encoded; the Worker decodes it.
@@ -213,24 +254,17 @@ async function unlock(event) {
 	els.unlockBtn.disabled = true;
 	els.lockError.textContent = "";
 	try {
-		const res = await fetch("/api/auth", { method: "POST", headers: { authorization: bearer(pass) } });
-		if (res.status === 401) {
-			els.lockError.textContent = "Incorrect passcode.";
-			els.passInput.select();
+		const result = await signIn(pass);
+		if (result.status) {
+			// A 401 carries a warning on the last try before a lockout; otherwise it is a plain wrong passcode.
+			els.lockError.textContent = result.status === 401 && result.error === "Unauthorized" ? "Incorrect passcode." : result.error;
+			if (result.status === 401) els.passInput.select();
 			return;
 		}
-		if (!res.ok) {
-			els.lockError.textContent = await errorText(res);
-			return;
-		}
-		state.passcode = pass;
-		storage.set(KEY_PASS, pass);
 		els.lock.hidden = true;
 		syncModal();
 		els.passInput.blur();
-		await loadModels().catch(() => {});
-		renderChatList();
-		usage.start();
+		start();
 	} catch {
 		els.lockError.textContent = "Network error. Try again.";
 	} finally {
@@ -1388,7 +1422,9 @@ function bindEvents() {
 		}
 	});
 	els.lockBtn.addEventListener("click", () => {
-		state.passcode = null;
+		notify.signOut();
+		state.token = null;
+		storage.del(KEY_TOKEN);
 		storage.del(KEY_PASS);
 		showLock();
 	});
