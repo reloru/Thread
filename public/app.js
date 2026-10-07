@@ -2,6 +2,7 @@ import { healStreaming, renderMarkdown } from "./markdown.js";
 import * as db from "./db.js";
 import { createSettings } from "./settings.js";
 import { createVoice } from "./voice.js";
+import { createUsage } from "./usage.js";
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -17,6 +18,7 @@ const els = {
 	file: $("file"),
 	attachments: $("attachments"),
 	toolChips: $("toolChips"),
+	usage: $("usage"),
 	notice: $("notice"),
 	toBottom: $("toBottom"),
 	menuBtn: $("menuBtn"),
@@ -124,6 +126,8 @@ const voice = createVoice({
 	syncModal,
 });
 
+const usage = createUsage({ storage, el, api, canFetch: () => Boolean(state.passcode), button: els.usage });
+
 function init() {
 	fitViewport();
 	bindEvents();
@@ -135,6 +139,7 @@ function init() {
 	}
 	loadModels().catch(() => {});
 	renderChatList();
+	usage.start();
 }
 
 /* ---------- API ---------- */
@@ -225,6 +230,7 @@ async function unlock(event) {
 		els.passInput.blur();
 		await loadModels().catch(() => {});
 		renderChatList();
+		usage.start();
 	} catch {
 		els.lockError.textContent = "Network error. Try again.";
 	} finally {
@@ -810,6 +816,9 @@ async function respond(chat, params, hooks = {}) {
 	setStreaming(true);
 
 	let thinkStart = null;
+	// Neurons this reply cost, from the usage total each model request reports in its last event.
+	let neurons = 0;
+	let started = Date.now();
 	let frame = 0;
 	let timer = 0;
 	let lastRender = 0;
@@ -855,6 +864,7 @@ async function respond(chat, params, hooks = {}) {
 			signal: controller.signal,
 		});
 		if (!res.ok) throw new Error(await errorText(res));
+		started = Number(res.headers.get("x-thread-started")) || started;
 		let finished = false;
 		const sawDone = await readSSE(res.body, (evt) => {
 			if (evt.thread) {
@@ -862,6 +872,8 @@ async function respond(chat, params, hooks = {}) {
 				schedule();
 				return;
 			}
+			// Each model request ends with an event that has the request's usage and no choices.
+			if (!evt.choices && typeof evt.usage?.neurons === "number") neurons += evt.usage.neurons;
 			if (evt.error || evt.errors?.length) {
 				const e = evt.error ?? evt.errors[0];
 				throw new Error(typeof e === "string" ? e : e.message || "Model error");
@@ -901,6 +913,7 @@ async function respond(chat, params, hooks = {}) {
 			}
 		}
 		if (thinkStart !== null && !msg.thinkMs) msg.thinkMs = Math.round(performance.now() - thinkStart);
+		usage.record(neurons, started);
 		hooks.onEnd?.(msg);
 		if (state.controller === controller) {
 			state.controller = null;

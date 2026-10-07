@@ -1,9 +1,10 @@
 export const NO_STORE = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
 
 export class HttpError extends Error {
-	constructor(status, message) {
+	constructor(status, message, headers) {
 		super(message);
 		this.status = status;
+		this.headers = headers;
 	}
 }
 
@@ -38,9 +39,9 @@ export function requireMethod(request, method) {
 	if (request.method !== method) throw new HttpError(405, `Use ${method}.`);
 }
 
-export function json(data, status = 200) {
+export function json(data, status = 200, headers = {}) {
 	return new Response(JSON.stringify(data), {
 		status,
-		headers: { "content-type": "application/json; charset=utf-8", ...NO_STORE },
+		headers: { "content-type": "application/json; charset=utf-8", ...NO_STORE, ...headers },
 	});
 }

@@ -47,7 +47,10 @@ Live: https://thread.reloru.workers.dev
   - Voice requests turn thinking off where a way is verified (Gemma, DeepSeek, Qwen, Nemotron: Thinking off; Kimi: effort none), add a spoken-style instruction in the language of the voice, and keep only the spoken part of a reply you interrupt.
 - Chat history and settings are stored on the device (IndexedDB and localStorage). Nothing is stored server-side.
 - Requests go straight to Workers AI. To route them through an AI Gateway for logs and analytics, set `AI_GATEWAY_ID` in `wrangler.jsonc` to the gateway's ID.
-- Access is gated by a passcode held as a Worker secret. The app asks for it once per device.
+- Access is gated by a passcode held as a Worker secret. The app asks for it once per device. Five wrong passcodes from one IP lock that IP out for 15 minutes, right passcode included; each further lockout doubles, up to 24 hours. A correct passcode, or a day without failures after a lockout ends, clears it. Other IPs are not affected.
+- Usage counter (right of the Code and Web chips): Workers AI neurons and billed USD for today (UTC), or this month after a tap. Billed means above the free 10,000 neurons per day, at $0.011 per 1,000 ([pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/)), each day counted separately.
+  - The figures come from the account's GraphQL analytics (`aiInferenceAdaptiveGroups`), refreshed every minute while the app is open. They cover the whole account (the data has no per-Worker field), so Workers AI calls made outside the app count too.
+  - Analytics rows appear about 10 minutes after a request. Each reply's own cost, which the model reports in its last stream event, is added on the device that received it until analytics includes it. Voice transcription and speech are counted only through analytics.
 
 ## Passcode
 
@@ -58,6 +61,14 @@ echo -n 'new-passcode' | npx wrangler@4.147.0 secret put PASSCODE --name thread
 ```
 
 Devices holding the old passcode are sent back to the lock screen on their next request.
+
+## Usage counter
+
+The counter needs an API token with Account Analytics Read and the account ID, held as Worker secrets; without them it stays hidden.
+
+```sh
+echo -n 'TOKEN' | npx wrangler@4.147.0 secret put USAGE_API_TOKEN --name thread && echo -n 'ACCOUNT_ID' | npx wrangler@4.147.0 secret put USAGE_ACCOUNT_ID --name thread
+```
 
 ## Deploy
 
@@ -75,12 +86,13 @@ The AI binding always calls the real Workers AI service, so local requests are b
 
 ## Layout
 
-- `src/worker.js`: API (`/api/auth`, `/api/models`, `/api/chat`), passcode check, request and parameter validation, Workers AI streaming.
+- `src/worker.js`: API (`/api/auth`, `/api/models`, `/api/chat`, `/api/usage`), passcode check, request and parameter validation, Workers AI streaming.
+- `src/lockout.js` + `src/guard.js`: passcode lockout rules and the Durable Object that keeps the per-IP counts. `src/usage.js`: `/api/usage` (neurons per UTC day this month from the GraphQL Analytics API).
 - `src/models.js`: model allowlist and per-model parameter specs.
 - `src/voice.js` + `src/voices.js`: voice API (`/api/voices`, `/api/voice/transcribe`, `/api/voice/turn`, `/api/voice/speak`) and the Aura-2 voice list. `src/http.js`: helpers shared by the Worker and the voice API.
 - `src/agent.js`: server-side tool loop (streams model output, runs tool calls, feeds results back, at most 6 rounds).
 - `src/sandbox.js` + `container/`: Durable Object that starts the Python sandbox container; `runner.py` (HTTP) and `kernel.py` (persistent interpreter).
-- `src/index.js`: Worker entry (exports the Worker and the `Sandbox` class).
+- `src/index.js`: Worker entry (exports the Worker and the `Sandbox` and `Guard` classes).
 - `public/params.js`: parameter validation shared by the app and the Worker; `public/settings.js`: settings panel.
-- `public/voice.js`: voice mode (microphone, turn taking, playback, voice picker); `pcm.js`: resampling, WAV encoding, voice detection and turn segmentation; `speech.js`: markdown to spoken sentences; `voice-worklet.js`: microphone tap.
+- `public/voice.js`: voice mode (microphone, turn taking, playback, voice picker); `pcm.js`: resampling, WAV encoding, voice detection and turn segmentation; `speech.js`: markdown to spoken sentences; `voice-worklet.js`: microphone tap. `public/usage.js`: usage counter.
 - `public/`: static app (no build step). `markdown.js` is the renderer; every text path is HTML-escaped and links are limited to http(s) and mailto. `_headers` sets a strict CSP.
