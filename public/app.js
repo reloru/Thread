@@ -5,6 +5,7 @@ import { createVoice } from "./voice.js";
 import { createUsage } from "./usage.js";
 import { createNotify } from "./notify.js";
 import { createGeneral } from "./general.js";
+import { createWords } from "./words.js";
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -108,7 +109,9 @@ const state = {
 
 class AuthError extends Error {}
 
-const settings = createSettings({ storage, el, icon });
+const words = createWords({ storage });
+
+const settings = createSettings({ storage, el, icon, words });
 
 const voice = createVoice({
 	storage,
@@ -128,7 +131,7 @@ const usage = createUsage({ storage, el, api, canFetch: () => Boolean(state.toke
 
 const notify = createNotify({ storage, api, toast, card: els.notifyCard, allow: els.notifyAllow, later: els.notifyLater });
 
-const general = createGeneral({ storage, el, notify });
+const general = createGeneral({ storage, el, icon, notify, words, currentModel: () => currentModel() });
 
 function init() {
 	fitViewport();
@@ -732,7 +735,7 @@ async function sendNow() {
 		toast(`${model.name} can't read images. Pick a model marked Vision.`);
 		return;
 	}
-	const params = paramsFor(model);
+	const params = await paramsFor(model);
 	if (!params) return;
 
 	const chat = state.chat;
@@ -770,7 +773,7 @@ async function voiceTurn(text, voiceInfo, hooks) {
 		if (!state.models.length) await loadModels().catch(() => {});
 		const model = currentModel();
 		if (!model) return null;
-		const params = paramsFor(model);
+		const params = await paramsFor(model);
 		if (!params) return null;
 		const chat = state.chat;
 		const userMsg = { id: uid(), role: "user", content: text, time: Date.now() };
@@ -784,13 +787,23 @@ async function voiceTurn(text, voiceInfo, hooks) {
 	}
 }
 
-function paramsFor(model) {
+// The model's settings plus the banned words from Settings (as logit_bias). Null, with a message, when it can't be built.
+async function paramsFor(model) {
+	let params;
 	try {
-		return settings.params(model);
+		params = settings.params(model);
 	} catch (err) {
 		toast(`${model.name} settings: ${err.message}`);
 		return null;
 	}
+	try {
+		const banned = await words.biasFor(model);
+		if (Object.keys(banned).length) params = { ...params, logit_bias: { ...params.logit_bias, ...banned } };
+	} catch {
+		toast("Couldn't load the banned words list. Check your connection and try again.");
+		return null;
+	}
+	return params;
 }
 
 async function regenerate() {
@@ -811,7 +824,7 @@ async function regenerateNow() {
 	if (state.chat !== chat) return;
 	const model = currentModel();
 	if (!model) return;
-	const params = paramsFor(model);
+	const params = await paramsFor(model);
 	if (!params) return;
 	const prev = chat.messages.at(-1)?.role === "assistant" ? chat.messages.pop() : null;
 	renderConversation();

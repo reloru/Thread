@@ -1,4 +1,5 @@
 import { ParamError, hasCustom, toWire } from "./params.js";
+import { switchRow } from "./general.js";
 
 const KEY_PARAMS = "thread.params";
 const GROUPS = ["Reply length", "Thinking", "Randomness", "Word choice"];
@@ -8,10 +9,10 @@ const OPTION_LABELS = { max: "Max", xhigh: "Extra high", high: "High", medium: "
 
 /**
  * Per-model parameter settings.
- * deps: { storage, el, icon }
+ * deps: { storage, el, icon, words }
  */
 export function createSettings(deps) {
-	const { storage, el, icon } = deps;
+	const { storage, el, icon, words } = deps;
 	let all = read();
 
 	function read() {
@@ -44,6 +45,7 @@ export function createSettings(deps) {
 		reset(id) {
 			delete all[id];
 			save();
+			words.setOn(id, true);
 		},
 		render(container, model) {
 			const status = el("p", "settings-status");
@@ -74,12 +76,34 @@ export function createSettings(deps) {
 				for (const c of controls) sec.append(control(c, values[c.key], commit));
 				nodes.push(sec);
 			}
-			nodes.push(status);
+			nodes.push(bannedWords(model), status);
 
 			container.replaceChildren(...nodes);
 			validate();
 		},
 	};
+
+	// Whether the banned words from Settings apply to this model; the list itself is edited in Settings.
+	function bannedWords(model) {
+		const sec = section("Banned words");
+		if (!model.tokenizer) {
+			sec.append(hint(`${model.name} doesn't support banned words.`));
+			return sec;
+		}
+		const n = words.count();
+		const sub = n ? `${n} ${n === 1 ? "word" : "words"} from Settings.` : "Your list is empty. Add words in Settings.";
+		const sw = switchRow(el, {
+			title: "Block my banned words",
+			sub,
+			checked: words.isOn(model.id),
+			onToggle(on) {
+				words.setOn(model.id, on);
+				sw.set(on);
+			},
+		});
+		sec.append(sw.row, hint("Turn this off for a model if its replies come out odd with the words blocked."));
+		return sec;
+	}
 
 	function section(title) {
 		const sec = el("section", "set-group");
