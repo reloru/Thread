@@ -1099,6 +1099,43 @@ svg {
 .switch-row:disabled { cursor: default; }
 .switch-row:disabled .switch { opacity: 0.45; }
 
+/* Banned words in Settings */
+.word-add { display: flex; gap: 8px; margin-top: 10px; }
+.word-input {
+	flex: 1;
+	min-width: 0;
+	height: 44px;
+	padding: 0 12px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: var(--surface);
+	color: var(--text);
+	font: inherit;
+	font-size: 16px;
+	outline: 0;
+}
+.word-input:focus { border-color: var(--accent); }
+.word-input::placeholder { color: var(--faint); }
+.word-add-btn {
+	height: 44px;
+	padding: 0 18px;
+	border: 0;
+	border-radius: 12px;
+	background: var(--accent);
+	color: var(--bg);
+	font-weight: 600;
+}
+.word-list { margin-top: 6px; }
+.word-row { padding: 6px 0; border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.word-row:first-child { border-top: 0; }
+.word-head { display: flex; align-items: center; justify-content: space-between; min-height: 40px; }
+.word-text { font-size: 16px; font-weight: 560; overflow-wrap: anywhere; }
+.word-opt { margin: 0; padding: 4px 0; background: transparent; }
+.word-opt .switch-text b { color: var(--muted); font-size: 14px; font-weight: 500; }
+.word-opt .switch { width: 40px; height: 24px; border-radius: 12px; }
+.word-opt .switch::after { width: 18px; height: 18px; }
+.word-opt[aria-checked="true"] .switch::after { transform: translateX(16px); }
+
 .voice-list { display: flex; flex-direction: column; }
 .voice-row { display: flex; align-items: center; gap: 4px; padding-right: 6px; border-radius: 14px; }
 .voice-row.selected { background: var(--surface); }

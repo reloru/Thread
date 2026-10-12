@@ -1,4 +1,6 @@
 // Prices are USD per million tokens [input, output], from the Workers AI model catalog API.
+// `tokenizer` names the word list in public/vocab/ for the model's tokenizer; only models that accept
+// logit_bias have one (the others cannot use banned words).
 // Parameter specs come from each model's input schema (GET /ai/models/schema), narrowed where
 // live requests disagreed with the schema. `default` is the schema's documented default, shown greyed
 // out in an empty field; it is not sent. Max output tokens is the exception: the Worker always sends it.
@@ -96,15 +98,12 @@ const responseFormat = (options) => ({
 	type: "format",
 	options,
 });
-const biasHelp = (max) =>
-	`Makes specific tokens more or less likely. Enter JSON that pairs a token ID with a number from -100 to ${max}. Small numbers nudge the odds; -100 should ban that token outright. Each model numbers its tokens differently.`;
+// Not shown in the app: the banned words in Settings are sent as logit_bias (see public/words.js).
 const logitBias = {
 	key: "logit_bias",
 	label: "Logit bias",
-	group: "Word choice",
+	hidden: true,
 	type: "bias",
-	placeholder: 'e.g. {"1234": -100}',
-	help: biasHelp(100),
 };
 const REASONING_HELP = "How much the model thinks before it answers. Higher levels think longer, which takes more time and more tokens.";
 const ALWAYS_THINKS = "This model always thinks; it can't be turned off.";
@@ -231,6 +230,7 @@ export const MODELS = [
 		vision: true,
 		context: 1048576,
 		price: [0.15, 0.5],
+		tokenizer: "glm",
 		controls: chatControls(1048576, [reasoningEffort(["max", "high", "low"], "max", ALWAYS_THINKS)], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
@@ -241,6 +241,7 @@ export const MODELS = [
 		vision: true,
 		context: 256000,
 		price: [0.1, 0.3],
+		tokenizer: "gemma",
 		voiceParams: THINKING_OFF,
 		controls: chatControls(256000, [enableThinking()], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
@@ -265,6 +266,7 @@ export const MODELS = [
 		vision: false,
 		context: 128000,
 		price: [0.2, 0.3],
+		tokenizer: "gptoss",
 		controls: olderControls({
 			reasoning: [reasoningEffort(["low", "medium", "high"], "medium", ALWAYS_THINKS)],
 			// Outside these limits replies came back empty or as garbage with leaked format tokens.
@@ -272,7 +274,7 @@ export const MODELS = [
 			repetition: { min: 0.7 },
 			max: maxTokens(128000),
 			formats: [],
-			bias: [{ ...logitBias, max: 30, help: biasHelp(30) }],
+			bias: [{ ...logitBias, max: 30 }],
 		}),
 		extraKeys: OLDER_EXTRA_KEYS,
 	},
@@ -301,6 +303,7 @@ export const MODELS = [
 		vision: false,
 		context: 128000,
 		price: [0.35, 0.75],
+		tokenizer: "gptoss",
 		controls: olderControls({
 			reasoning: [reasoningEffort(["low", "medium", "high"], "medium", ALWAYS_THINKS)],
 			// Outside these limits replies came back empty, as garbage with leaked format tokens, or as a stream error.
@@ -336,6 +339,7 @@ export const MODELS = [
 		vision: false,
 		context: 1048576,
 		price: [0.44, 1.32],
+		tokenizer: "deepseek",
 		voiceParams: THINKING_OFF,
 		controls: chatControls(1048576, [reasoningEffort(["max", "high", "low"], "high", THINKING_TOGGLE), enableThinking()], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
@@ -347,6 +351,7 @@ export const MODELS = [
 		vision: true,
 		context: 262144,
 		price: [0.45, 3.2],
+		tokenizer: "qwen",
 		voiceParams: THINKING_OFF,
 		controls: chatControls(262144, [reasoningEffort(["xhigh", "medium", "low"], "xhigh", THINKING_TOGGLE), enableThinking()]),
 		extraKeys: CHAT_EXTRA_KEYS,
@@ -358,6 +363,7 @@ export const MODELS = [
 		vision: false,
 		context: 256000,
 		price: [0.5, 1.5],
+		tokenizer: "nemotron",
 		voiceParams: THINKING_OFF,
 		// With Thinking off the service streams the reply in the reasoning field; the Worker moves it into content.
 		replyInReasoningWhenThinkingOff: true,
@@ -374,6 +380,7 @@ export const MODELS = [
 		vision: true,
 		context: 262144,
 		price: [0.95, 4],
+		tokenizer: "kimi",
 		voiceParams: { reasoning_effort: "none" },
 		controls: chatControls(262144, [reasoningEffort(["high", "none"], "high", "Choose None to skip thinking.")], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
@@ -385,6 +392,7 @@ export const MODELS = [
 		vision: true,
 		context: 262144,
 		price: [0.95, 4],
+		tokenizer: "kimi",
 		controls: chatControls(262144, [], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
@@ -395,6 +403,7 @@ export const MODELS = [
 		vision: false,
 		context: 1048576,
 		price: [1.32, 3.96],
+		tokenizer: "deepseek",
 		voiceParams: THINKING_OFF,
 		controls: chatControls(1048576, [reasoningEffort(["max", "high", "low"], "high", THINKING_TOGGLE), enableThinking()], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
@@ -406,6 +415,7 @@ export const MODELS = [
 		vision: false,
 		context: 1048576,
 		price: [1.4, 4.4],
+		tokenizer: "glm",
 		controls: chatControls(1048576, [reasoningEffort(["max", "high", "low"], "max", ALWAYS_THINKS)], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
