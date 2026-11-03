@@ -112,6 +112,7 @@ const state = {
 	processing: 0,
 	busy: false,
 	controller: null,
+	replyId: null,
 	stick: true,
 };
 
@@ -167,10 +168,20 @@ function init() {
 function start() {
 	loadModels().catch(() => {});
 	renderChatList();
+	openUnfinished();
 	usage.start();
 	notify.start();
 	// Asks the browser not to clear this app's storage (and so its sign-in) when the device runs low on space.
 	navigator.storage?.persist?.().catch(() => {});
+}
+
+// Reopens the latest chat when its reply was still coming in when the app last closed.
+async function openUnfinished() {
+	try {
+		const [latest] = await db.listChats();
+		const chat = latest && (await db.getChat(latest.id));
+		if (chat && canResume(chat) && !state.chat.messages.length) openChat(chat.id);
+	} catch {}
 }
 
 /* ---------- API ---------- */
@@ -310,6 +321,7 @@ async function openChat(id) {
 	renderConversation();
 	renderToolChips();
 	closeOverlays();
+	resumeReply(chat);
 }
 
 function renderToolChips() {
@@ -509,7 +521,7 @@ function renderAssistant(view, msg, live) {
 
 	const notes = [];
 	if (msg.stopped) notes.push("Stopped");
-	if (msg.pending && !live) notes.push("Interrupted");
+	if ((msg.pending && !live) || msg.lost) notes.push("Interrupted");
 	if (msg.truncated) notes.push("Hit length limit");
 	if (msg.toolCall) notes.push("Tool call requested (not run)");
 	view.error.hidden = !msg.error;
@@ -871,8 +883,50 @@ async function respond(chat, params, hooks = {}) {
 	chat.messages.push(msg);
 	chat.updated = Date.now();
 	persist(chat).then(renderChatList);
+	const body = JSON.stringify({
+		model: model.id,
+		messages: history,
+		params,
+		instructions: general.instructions(),
+		tools: chat.tools?.length ? chat.tools : undefined,
+		chatId: chat.id,
+		voice: hooks.voice,
+		// The reply runs on the server under this id, so it can be picked back up after a lost connection.
+		replyId: msg.id,
+	});
+	state.replying = runReply(chat, msg, appendMessage(msg, true), { body, hooks });
+	return state.replying;
+}
 
-	const view = appendMessage(msg, true);
+// A reply the app lost (closed or killed while it streamed, or the connection gave out) and the server may still
+// have: shown again from its first event. Replies are kept on the server for an hour after they end.
+const RESUMABLE_MS = 60 * 60 * 1000;
+
+function canResume(chat) {
+	const msg = chat.messages.at(-1);
+	return Boolean(msg?.role === "assistant" && (msg.pending || msg.resumable) && !msg.lost && Date.now() - msg.time < RESUMABLE_MS);
+}
+
+async function resumeReply(chat) {
+	// A reply that was just stopped (opening this chat stops the one in progress) finishes its cleanup first.
+	await state.replying?.catch(() => {});
+	if (state.controller || state.busy || state.chat !== chat || !canResume(chat)) return;
+	const msg = chat.messages.at(-1);
+	const saved = structuredClone(msg);
+	for (const key of ["error", "stopped", "truncated", "toolCall", "thinkMs", "resumable"]) delete msg[key];
+	Object.assign(msg, { content: "", reasoning: "", tools: [], toolsVersion: (msg.toolsVersion || 0) + 1, pending: true });
+	els.messages.lastElementChild?.remove();
+	state.replying = runReply(chat, msg, appendMessage(msg, true), { replay: true, saved });
+}
+
+class ReplyError extends Error {}
+
+const IDLE_MS = 45000;
+const MAX_RETRIES = 8;
+
+// Streams a reply into msg: a new one (body: the request) or, with replay, one already on the server. A dropped
+// connection reconnects and asks for the events after the ones it has; Stop cancels the reply on the server.
+async function runReply(chat, msg, view, { body = null, hooks = {}, replay = false, saved = null }) {
 	els.announce.textContent = "";
 	updateRegen();
 	state.stick = true;
@@ -880,6 +934,7 @@ async function respond(chat, params, hooks = {}) {
 
 	const controller = new AbortController();
 	state.controller = controller;
+	state.replyId = msg.id;
 	setStreaming(true);
 
 	let thinkStart = null;
@@ -915,59 +970,90 @@ async function respond(chat, params, hooks = {}) {
 		else run();
 	};
 
-	try {
-		const res = await api("/api/chat", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({
-				model: model.id,
-				messages: history,
-				params,
-				instructions: general.instructions(),
-				tools: chat.tools?.length ? chat.tools : undefined,
-				chatId: chat.id,
-				voice: hooks.voice,
-			}),
-			signal: controller.signal,
-		});
-		if (!res.ok) throw new Error(await errorText(res));
-		started = Number(res.headers.get("x-thread-started")) || started;
-		let finished = false;
-		const sawDone = await readSSE(res.body, (evt) => {
-			if (evt.thread) {
-				handleToolEvent(msg, evt.thread);
-				schedule();
-				return;
-			}
-			// Each model request ends with an event that has the request's usage and no choices.
-			if (!evt.choices && typeof evt.usage?.neurons === "number") neurons += evt.usage.neurons;
-			if (evt.error || evt.errors?.length) {
-				const e = evt.error ?? evt.errors[0];
-				throw new Error(typeof e === "string" ? e : e.message || "Model error");
-			}
-			const choice = evt.choices?.find((c) => (c.index ?? 0) === 0);
-			const delta = choice?.delta || {};
-			if (delta.tool_calls || choice?.finish_reason === "tool_calls") msg.toolCall = true;
-			const reasoning = delta.reasoning_content ?? delta.reasoning;
-			if (reasoning) {
-				thinkStart ??= performance.now();
-				msg.reasoning += reasoning;
-			}
-			const content = delta.content ?? (typeof evt.response === "string" ? evt.response : "");
-			if (content) {
-				if (thinkStart !== null && !msg.thinkMs) msg.thinkMs = Math.round(performance.now() - thinkStart);
-				msg.content += content;
-				hooks.onContent?.(content, msg);
-			}
-			if (choice?.finish_reason) finished = true;
-			if (choice?.finish_reason === "length") msg.truncated = true;
+	let finished = false;
+	let ended = false;
+	const onEvent = (evt) => {
+		if (evt.thread) {
+			if (evt.thread.type === "end") ended = true;
+			else handleToolEvent(msg, evt.thread);
 			schedule();
-		});
-		if (!sawDone && !finished) msg.error = "The reply ended early and may be incomplete. Regenerate to try again.";
+			return;
+		}
+		// Each model request ends with an event that has the request's usage and no choices.
+		if (!evt.choices && typeof evt.usage?.neurons === "number") neurons += evt.usage.neurons;
+		if (evt.error || evt.errors?.length) {
+			const e = evt.error ?? evt.errors[0];
+			throw new ReplyError(typeof e === "string" ? e : e.message || "Model error");
+		}
+		const choice = evt.choices?.find((c) => (c.index ?? 0) === 0);
+		const delta = choice?.delta || {};
+		if (delta.tool_calls || choice?.finish_reason === "tool_calls") msg.toolCall = true;
+		const reasoning = delta.reasoning_content ?? delta.reasoning;
+		if (reasoning) {
+			// A replay arrives all at once, so it says nothing about how long the model thought.
+			if (!replay) thinkStart ??= performance.now();
+			msg.reasoning += reasoning;
+		}
+		const content = delta.content ?? (typeof evt.response === "string" ? evt.response : "");
+		if (content) {
+			if (thinkStart !== null && !msg.thinkMs) msg.thinkMs = Math.round(performance.now() - thinkStart);
+			msg.content += content;
+			hooks.onContent?.(content, msg);
+		}
+		if (choice?.finish_reason) finished = true;
+		if (choice?.finish_reason === "length") msg.truncated = true;
+		schedule();
+	};
+
+	try {
+		// Events received so far, counted the way the server numbers them (every data line).
+		const cursor = { n: 0 };
+		let failures = 0;
+		for (;;) {
+			const conn = new AbortController();
+			const stop = () => conn.abort();
+			// Back from the background, a suspended connection can look open and never deliver: start a fresh one.
+			const wake = () => document.visibilityState === "visible" && conn.abort();
+			controller.signal.addEventListener("abort", stop);
+			document.addEventListener("visibilitychange", wake);
+			const before = cursor.n;
+			try {
+				// The start is safe to repeat: the server keeps the first one and streams that reply from its start.
+				const res =
+					body && cursor.n === 0
+						? await api("/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body, signal: conn.signal })
+						: await api(`/api/chat/follow?id=${msg.id}&after=${cursor.n}`, { signal: conn.signal });
+				if (res.status === 404 && !body) throw new ReplyError("gone");
+				if (!res.ok) throw new ReplyError(await errorText(res));
+				started = Number(res.headers.get("x-thread-started")) || started;
+				const sawDone = await readSSE(res.body, onEvent, { cursor, idleMs: IDLE_MS });
+				if (sawDone || ended) {
+					if (!sawDone && !finished && !msg.stopped) msg.error = "The reply ended early and may be incomplete. Regenerate to try again.";
+					break;
+				}
+				throw new TypeError("The connection closed before the reply ended.");
+			} catch (err) {
+				if (controller.signal.aborted || err instanceof AuthError || err instanceof ReplyError) throw err;
+				failures = cursor.n > before ? 0 : failures + 1;
+				if (failures > MAX_RETRIES) {
+					msg.resumable = true;
+					throw new ReplyError("Lost the connection to the server. Open this chat again to pick the reply back up.");
+				}
+				await reconnectDelay(failures, controller.signal);
+				if (controller.signal.aborted) throw new DOMException("Stopped", "AbortError");
+			} finally {
+				controller.signal.removeEventListener("abort", stop);
+				document.removeEventListener("visibilitychange", wake);
+			}
+		}
 	} catch (err) {
-		if (err.name === "AbortError") msg.stopped = true;
+		if (controller.signal.aborted) msg.stopped = true;
 		else if (err instanceof AuthError) msg.error = "Locked. Unlock and regenerate.";
-		else msg.error = err.message || String(err);
+		else if (err instanceof ReplyError && err.message === "gone") {
+			// Nothing left on the server: the reply stays as far as this device had saved it, marked Interrupted.
+			for (const key of Object.keys(msg)) delete msg[key];
+			Object.assign(msg, saved, { lost: true, toolsVersion: (saved?.toolsVersion || 0) + 1 });
+		} else msg.error = err.message || String(err);
 	} finally {
 		if (frame) cancelAnimationFrame(frame);
 		clearTimeout(timer);
@@ -989,6 +1075,7 @@ async function respond(chat, params, hooks = {}) {
 		hooks.onEnd?.(msg);
 		if (state.controller === controller) {
 			state.controller = null;
+			state.replyId = null;
 			setStreaming(false);
 		}
 		chat.updated = Date.now();
@@ -1002,19 +1089,57 @@ async function respond(chat, params, hooks = {}) {
 	return msg;
 }
 
-async function readSSE(body, onEvent) {
+// Waits before reconnecting: until the app is in view again, then 1 s, 2 s, 4 s… up to 15 s. Ends early on Stop.
+function reconnectDelay(failures, signal) {
+	return new Promise((resolve) => {
+		let t = 0;
+		const done = () => {
+			clearTimeout(t);
+			document.removeEventListener("visibilitychange", onVisible);
+			signal.removeEventListener("abort", done);
+			resolve();
+		};
+		const wait = () => (t = setTimeout(done, Math.min(15000, 1000 * 2 ** Math.max(0, failures - 1))));
+		const onVisible = () => {
+			if (document.visibilityState !== "visible") return;
+			document.removeEventListener("visibilitychange", onVisible);
+			wait();
+		};
+		signal.addEventListener("abort", done);
+		if (document.visibilityState === "visible") wait();
+		else document.addEventListener("visibilitychange", onVisible);
+	});
+}
+
+// Reads SSE data events. cursor.n counts every data line, the way the server numbers events. With idleMs, a
+// connection that delivers nothing (not even the server's pings) for that long is treated as dropped.
+async function readSSE(body, onEvent, { cursor = { n: 0 }, idleMs = 0 } = {}) {
 	const reader = body.getReader();
 	const decoder = new TextDecoder();
 	let buffer = "";
+	let idle = 0;
+	let stalled = false;
+	const arm = () => {
+		if (!idleMs) return;
+		clearTimeout(idle);
+		idle = setTimeout(() => {
+			stalled = true;
+			reader.cancel().catch(() => {});
+		}, idleMs);
+	};
 	try {
+		arm();
 		for (;;) {
 			const { value, done } = await reader.read();
+			if (stalled) throw new TypeError("The connection stopped delivering.");
+			arm();
 			buffer += done ? decoder.decode() + "\n" : decoder.decode(value, { stream: true });
 			let nl;
 			while ((nl = buffer.indexOf("\n")) !== -1) {
 				const line = buffer.slice(0, nl).replace(/\r$/, "");
 				buffer = buffer.slice(nl + 1);
 				if (!line.startsWith("data:")) continue;
+				cursor.n++;
 				const data = line.slice(5).trim();
 				if (data === "[DONE]") return true;
 				let evt;
@@ -1030,11 +1155,17 @@ async function readSSE(body, onEvent) {
 	} catch (err) {
 		reader.cancel().catch(() => {});
 		throw err;
+	} finally {
+		clearTimeout(idle);
 	}
 }
 
+// Stops the reply in progress, on the server too.
 function abortStream() {
+	const id = state.replyId;
+	state.replyId = null;
 	state.controller?.abort();
+	if (id && state.token) api(`/api/chat/cancel?id=${id}`, { method: "POST" }).catch(() => {});
 }
 
 function setStreaming(on) {

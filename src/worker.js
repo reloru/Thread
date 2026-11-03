@@ -1,7 +1,8 @@
 import { DEFAULT_MAX_TOKENS, DEFAULT_MODEL, MODELS } from "./models.js";
 import { ParamError, isPlainObject, sanitizeParams } from "../public/params.js";
-import { agentStream, reasoningAsContent, sanitizeTools } from "./agent.js";
-import { HttpError, NO_STORE, aiOptions, json, readBytes, requireMethod } from "./http.js";
+import { sanitizeTools } from "./agent.js";
+import { generate } from "./generate.js";
+import { HttpError, NO_STORE, json, readBytes, requireMethod } from "./http.js";
 import { VOICE_LANGS, speak, transcribe, turn, voiceConfig, voiceInstruction } from "./voice.js";
 import { usage } from "./usage.js";
 import { TOKEN_PREFIX, issueToken, verifyToken } from "./auth.js";
@@ -91,6 +92,12 @@ async function api(request, env, url, ctx) {
 		case "/api/chat":
 			requireMethod(request, "POST");
 			return chat(request, env);
+		case "/api/chat/follow":
+			requireMethod(request, "GET");
+			return reply(env, url, "GET", `/follow?after=${afterParam(url)}`);
+		case "/api/chat/cancel":
+			requireMethod(request, "POST");
+			return reply(env, url, "POST", "/cancel");
 		case "/api/convert":
 			requireMethod(request, "POST");
 			return convert(request, env);
@@ -156,22 +163,40 @@ async function chat(request, env) {
 		input.max_completion_tokens = model.defaultMaxTokens ?? DEFAULT_MAX_TOKENS;
 	}
 
-	const options = aiOptions(env);
 	const asContent = Boolean(model.replyInReasoningWhenThinkingOff && input.chat_template_kwargs?.enable_thinking === false);
-	const headers = { "content-type": "text/event-stream; charset=utf-8", "x-thread-started": String(started), ...NO_STORE };
-	if (tools.length) {
-		const stream = agentStream({ env, model: model.id, input, tools, chatId: body.chatId, options, asContent });
-		return new Response(stream, { headers });
+	const job = { model: model.id, input, tools, chatId: body.chatId, asContent, started };
+	// With a reply id the reply runs in its own Durable Object and survives the app going away (reply.js).
+	if (body.replyId !== undefined) {
+		const id = replyId(body.replyId);
+		return env.REPLY.getByName(id).fetch("https://reply/start", { method: "POST", body: JSON.stringify(job) });
 	}
+	// Apps from before replies ran in Durable Objects send no reply id; their replies stream from here.
+	const headers = { "content-type": "text/event-stream; charset=utf-8", "x-thread-started": String(started), ...NO_STORE };
 	let stream;
 	try {
-		stream = await env.AI.run(model.id, input, options);
+		stream = await generate(env, job);
 	} catch (err) {
 		console.error("AI.run failed", model.id, err);
 		throw new HttpError(502, `Model request failed: ${err?.message || String(err)}`);
 	}
+	return new Response(stream, { headers });
+}
 
-	return new Response(asContent ? reasoningAsContent(stream) : stream, { headers });
+function replyId(value) {
+	if (typeof value !== "string" || !CHAT_ID.test(value)) throw new HttpError(400, "replyId must be a UUID.");
+	return value;
+}
+
+function afterParam(url) {
+	const after = Number(url.searchParams.get("after") || 0);
+	if (!Number.isInteger(after) || after < 0) throw new HttpError(400, "after must be a whole number.");
+	return after;
+}
+
+// Follow or cancel the reply named by ?id=.
+function reply(env, url, method, path) {
+	const id = replyId(url.searchParams.get("id"));
+	return env.REPLY.getByName(id).fetch(`https://reply${path}`, { method });
 }
 
 async function convert(request, env) {

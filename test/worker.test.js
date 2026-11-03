@@ -582,3 +582,44 @@ test("usage: GraphQL errors become 502", async (t) => {
 	assert.equal(res.status, 502);
 	assert.match((await res.json()).error, /not authorized/);
 });
+
+test("replies with a reply id run in that reply's Durable Object; follow and cancel go to it", async () => {
+	const seen = [];
+	const REPLY = {
+		getByName: (name) => ({
+			fetch: async (url, init = {}) => {
+				seen.push({ name, url, method: init.method, job: init.body ? JSON.parse(init.body) : undefined });
+				return new Response("data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } });
+			},
+		}),
+	};
+	const { env, calls } = makeEnv({ REPLY });
+	const id = "123e4567-e89b-12d3-a456-426614174000";
+	const body = { model: VISION, messages: [{ role: "user", content: "x" }], instructions: "Be brief.", tools: ["web"], chatId: id, replyId: id };
+	const res = await worker.fetch(req("/api/chat", { method: "POST", body }), env);
+	assert.equal(await res.text(), "data: [DONE]\n\n");
+	assert.equal(calls.length, 0, "the model runs in the Durable Object, not in the request");
+	const start = seen[0];
+	assert.equal(start.name, id);
+	assert.equal(start.url, "https://reply/start");
+	assert.equal(start.method, "POST");
+	assert.equal(start.job.model, VISION);
+	assert.deepEqual(start.job.tools, ["web"]);
+	assert.equal(start.job.chatId, id);
+	assert.equal(start.job.input.messages[0].role, "system");
+	assert.equal(start.job.input.stream, true);
+	assert.ok(start.job.input.max_completion_tokens > 0);
+	assert.ok(start.job.started > 0);
+
+	await worker.fetch(req(`/api/chat/follow?id=${id}&after=7`), env);
+	assert.deepEqual([seen[1].url, seen[1].method], ["https://reply/follow?after=7", "GET"]);
+	await worker.fetch(req(`/api/chat/cancel?id=${id}`, { method: "POST" }), env);
+	assert.deepEqual([seen[2].url, seen[2].method], ["https://reply/cancel", "POST"]);
+
+	for (const path of ["/api/chat/follow?id=nope", `/api/chat/follow?id=${id}&after=-1`, `/api/chat/follow?id=${id}&after=1.5`]) {
+		assert.equal((await worker.fetch(req(path), env)).status, 400, path);
+	}
+	assert.equal((await worker.fetch(req("/api/chat", { method: "POST", body: { ...body, replyId: "x" } }), env)).status, 400);
+	assert.equal((await worker.fetch(req(`/api/chat/cancel?id=${id}`), env)).status, 405);
+	assert.equal(seen.length, 3);
+});

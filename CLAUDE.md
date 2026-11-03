@@ -1,6 +1,6 @@
 # Thread
 
-Mobile-first AI chat (installable web app) on Cloudflare Workers and Workers AI. The Worker (`src/`) serves the API; `public/` is the static app with no build step. Chats and settings live on the device (IndexedDB, localStorage); nothing is stored server-side except lockout counts and push subscriptions in the `Guard` Durable Object. See README.md for features and layout.
+Mobile-first AI chat (installable web app) on Cloudflare Workers and Workers AI. The Worker (`src/`) serves the API; `public/` is the static app with no build step. Chats and settings live on the device (IndexedDB, localStorage). Server-side: lockout counts and push subscriptions (`Guard` Durable Object), and each reply's streamed events until an hour after it ends (`Reply` Durable Object, one per reply). See README.md for features and layout.
 
 ## Checks
 
@@ -18,5 +18,6 @@ Pushes to `main` run the checks and deploy with `wrangler deploy` (`.github/work
 - Every element id a script looks up must be in `PAGE_IDS` in `public/page.js` and in `index.html`; `test/page.test.js` enforces it. The guard reloads or stops the app when the page and scripts are from different releases.
 - Model parameters are validated by the same code in the app and the Worker (`public/params.js`); per-model specs are in `src/models.js`. Add a control only after checking it changes the output on that model.
 - `public/_headers` sets the CSP (`script-src 'self'`, no inline scripts or inline style attributes) and `no-store` on the page.
+- Replies run in the `Reply` Durable Object (`src/replylog.js` holds the logic, tested in Node; `src/reply.js` wraps it), started by `POST /api/chat` with a `replyId`. Requests without one stream from the Worker as before (apps from earlier releases). The app counts every SSE data line; that count is the `after` it resumes from, so the server must never send a data line that isn't stored. A Durable Object keeps running a reply started from its fetch handler after the caller disconnects: measured with a probe Worker (5 minutes, past the 70–140 s idle eviction window); the docs don't state it.
 - Tool calls (`src/agent.js`) are not forwarded to the app; the app sees `{"thread": …}` events (`tool_prepare`, `tool_start`, `tool_result`). Argument limits are in `MAX_ARGS`.
 - Diagnosing a live problem: Workers observability (telemetry query API) has per-request wall time; GraphQL `aiInferenceAdaptiveGroups` has per-minute model calls with input and output tokens.

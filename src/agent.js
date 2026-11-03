@@ -53,19 +53,23 @@ export function sanitizeTools(input) {
 const truncate = (text, max = MAX_TOOL_TEXT) =>
 	text.length > max ? `${text.slice(0, max)}\n… [truncated ${text.length - max} characters]` : text;
 
-export function agentStream({ env, model, input, tools, chatId, options, asContent = false }) {
+// signal (optional) stops the loop: the model stream in progress is cancelled and no further tool or round runs.
+export function agentStream({ env, model, input, tools, chatId, options, asContent = false, signal }) {
 	const { readable, writable } = new TransformStream();
 	const writer = writable.getWriter();
-	const send = (data) => writer.write(encoder.encode(`data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`));
+	// Writes fail once the reader has gone; the loop stops on `signal`, not on write errors.
+	const send = (data) => writer.write(encoder.encode(`data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`)).catch(() => {});
 	const defs = tools.map((t) => TOOLS[t]);
 
 	(async () => {
 		const messages = [...input.messages];
 		try {
 			for (let round = 0; round < MAX_ROUNDS; round++) {
+				if (signal?.aborted) return;
 				// Tools stay defined on every round: without them some models print raw tool-call markup.
 				const stream = await env.AI.run(model, { ...input, messages, tools: defs }, options);
-				const { calls, content, failed } = await relay(asContent ? reasoningAsContent(stream) : stream, send, round);
+				const { calls, content, failed } = await relay(asContent ? reasoningAsContent(stream) : stream, send, round, signal);
+				if (signal?.aborted) return;
 				if (failed) {
 					// Not handed back to the model: another round could run away the same way.
 					send({ thread: { type: "tool_result", id: failed.id, name: failed.name, result: { error: failed.note } } });
@@ -83,6 +87,7 @@ export function agentStream({ env, model, input, tools, chatId, options, asConte
 					tool_calls: calls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: c.args } })),
 				});
 				for (const call of calls) {
+					if (signal?.aborted) return;
 					send({ thread: { type: "tool_start", id: call.id, name: call.name, args: safeArgs(call.args) } });
 					const { forModel, forUser } = await runTool(env, call, tools, chatId);
 					send({ thread: { type: "tool_result", id: call.id, name: call.name, result: forUser } });
@@ -148,8 +153,18 @@ export function reasoningAsContent(stream) {
 // with a tool_prepare event once its arguments start, since they are not forwarded. Returns `failed` instead of
 // calls when a call's arguments pass MAX_ARGS (the stream is cancelled) or the reply hits its length limit
 // while a call is unfinished.
-export async function relay(stream, send, round = 0) {
+export async function relay(stream, send, round = 0, signal) {
 	const reader = stream.getReader();
+	const stop = () => reader.cancel().catch(() => {});
+	signal?.addEventListener("abort", stop, { once: true });
+	try {
+		return await relayFrom(reader, send, round);
+	} finally {
+		signal?.removeEventListener("abort", stop);
+	}
+}
+
+async function relayFrom(reader, send, round) {
 	const decoder = new TextDecoder();
 	const calls = new Map();
 	let content = "";
