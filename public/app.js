@@ -6,6 +6,10 @@ import { createUsage } from "./usage.js";
 import { createNotify } from "./notify.js";
 import { createGeneral } from "./general.js";
 import { createWords } from "./words.js";
+import { checkPage } from "./page.js";
+
+// Stops here, before anything uses the page, when the page and the scripts are from different versions.
+if (!checkPage()) throw new Error("Page and scripts are from different versions.");
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -81,10 +85,14 @@ const storage = {
 			return null;
 		}
 	},
+	/** Returns false when the device refused to store it. */
 	set(k, v) {
 		try {
 			localStorage.setItem(k, v);
-		} catch {}
+			return true;
+		} catch {
+			return false;
+		}
 	},
 	del(k) {
 		try {
@@ -519,6 +527,11 @@ function renderToolRuns(box, tools) {
 			if (t.name === "fetch_url") {
 				const line = el("div", "tool-line");
 				line.append(icon("i-globe"));
+				if (t.preparing) {
+					line.append(el("span", "", "Writing a page request"), el("span", "tool-spin"));
+					run.append(line);
+					return run;
+				}
 				let host = t.args?.url || "";
 				try {
 					host = new URL(host).host;
@@ -538,7 +551,10 @@ function renderToolRuns(box, tools) {
 			}
 			const details = el("details", "tool-details");
 			const summary = el("summary");
-			summary.append(icon("i-code"), el("span", "", t.running ? "Running Python" : r.error ? "Ran Python · error" : "Ran Python"));
+			summary.append(
+				icon("i-code"),
+				el("span", "", t.preparing ? "Writing Python" : t.running ? "Running Python" : r.error ? "Ran Python · error" : "Ran Python"),
+			);
 			if (t.running) summary.append(el("span", "tool-spin"));
 			summary.append(icon("i-chev"));
 			const body = el("div", "tool-body");
@@ -565,15 +581,25 @@ function renderToolRuns(box, tools) {
 	);
 }
 
+// tool_prepare: the model is writing a call (shown so a long or runaway call isn't silent); tool_start: it runs.
 function handleToolEvent(msg, ev) {
 	msg.tools ??= [];
-	if (ev.type === "tool_start") {
-		msg.tools.push({ id: ev.id, name: ev.name, args: ev.args || {}, running: true });
-		if (msg.content && !msg.content.endsWith("\n\n")) msg.content += "\n\n";
+	if (ev.type === "tool_prepare" || ev.type === "tool_start") {
+		let t = msg.tools.find((x) => x.id === ev.id && x.running);
+		if (!t) {
+			t = { id: ev.id, name: ev.name, args: {}, running: true };
+			msg.tools.push(t);
+			// Each round of tool use starts a new paragraph, in the answer and in the thoughts.
+			if (msg.content && !msg.content.endsWith("\n\n")) msg.content += "\n\n";
+			if (msg.reasoning && !msg.reasoning.endsWith("\n\n")) msg.reasoning += "\n\n";
+		}
+		t.preparing = ev.type === "tool_prepare";
+		if (ev.type === "tool_start") t.args = ev.args || {};
 	} else if (ev.type === "tool_result") {
 		const t = msg.tools.find((x) => x.id === ev.id && x.running);
 		if (t) {
 			t.running = false;
+			t.preparing = false;
 			t.result = ev.result || {};
 		}
 	}
@@ -946,6 +972,11 @@ async function respond(chat, params, hooks = {}) {
 		if (frame) cancelAnimationFrame(frame);
 		clearTimeout(timer);
 		delete msg.pending;
+		// A call the model was still writing never ran, so it is dropped rather than kept as a stopped run.
+		if (msg.tools?.some((t) => t.running && t.preparing)) {
+			msg.tools = msg.tools.filter((t) => !(t.running && t.preparing));
+			msg.toolsVersion = (msg.toolsVersion || 0) + 1;
+		}
 		for (const t of msg.tools || []) {
 			if (t.running) {
 				t.running = false;
