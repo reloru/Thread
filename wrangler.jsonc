@@ -37,6 +37,10 @@
 			{
 				"name": "GUARD",
 				"class_name": "Guard"
+			},
+			{
+				"name": "REPLY",
+				"class_name": "Reply"
 			}
 		]
 	},
@@ -46,6 +50,10 @@
 			"storage": "sqlite"
 		},
 		"Guard": {
+			"type": "durable-object",
+			"storage": "sqlite"
+		},
+		"Reply": {
 			"type": "durable-object",
 			"storage": "sqlite"
 		}
@@ -89,6 +97,10 @@
 					{
 						"name": "GUARD",
 						"class_name": "Guard"
+					},
+					{
+						"name": "REPLY",
+						"class_name": "Reply"
 					}
 				]
 			},

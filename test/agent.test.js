@@ -243,3 +243,16 @@ test("the tool loop applies reasoningAsContent when asked", async () => {
 		assert.equal(deltas.some((d) => d.reasoning === "It is 42."), !asContent);
 	}
 });
+
+test("an abort stops the tool loop: the model stream is cancelled and no tool runs", async () => {
+	const { stream, state } = endless("run_python", "c1");
+	const controller = new AbortController();
+	let runs = 0;
+	const env = { AI: { run: async () => (runs++, stream) }, SANDBOX: { getByName: () => ({ run: async () => assert.fail("must not run") }) } };
+	const out = agentStream({ env, tools: ["python"], ...base, signal: controller.signal });
+	setTimeout(() => controller.abort(), 5);
+	const events = await collect(out);
+	assert.ok(state.cancelled);
+	assert.equal(runs, 1);
+	assert.ok(!events.some((e) => e === "[DONE]" || e.thread?.type === "tool_start"));
+});
