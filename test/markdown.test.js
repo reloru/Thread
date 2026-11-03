@@ -156,7 +156,15 @@ test("&amp; in bare and angle-bracket autolinks is decoded once", () => {
 	assert.match(html, /href="https:\/\/b\.com\/\?x=1&amp;y=2"/);
 });
 
-const visibleText = (html) => html.replace(/<[^>]*>/g, "");
+// Strips tags until none are left, so a tag split by another one can't survive a single pass.
+function visibleText(html) {
+	let text = html;
+	for (let prev = null; prev !== text; ) {
+		prev = text;
+		text = text.replace(/<[^>]*>/g, "");
+	}
+	return text;
+}
 
 test("healStreaming completes an unfinished span in the last paragraph", () => {
 	const cases = [
