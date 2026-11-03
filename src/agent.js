@@ -36,6 +36,12 @@ export const TOOLS = {
 
 const TOOL_BY_FUNCTION = { run_python: "python", fetch_url: "web" };
 
+// Longest arguments a call may have, in characters. gpt-oss once spent a whole 16,384-token reply writing a single
+// call; past these sizes the model is stopped instead. Unknown function names get the smallest limit.
+export const MAX_ARGS = { run_python: 30000, fetch_url: 4000 };
+const maxArgs = (name) => MAX_ARGS[name] ?? MAX_ARGS.fetch_url;
+const TOOL_LABEL = { run_python: "Python", fetch_url: "page request" };
+
 export function sanitizeTools(input) {
 	if (input === undefined || input === null) return [];
 	if (!Array.isArray(input) || input.some((t) => !Object.hasOwn(TOOLS, t))) {
@@ -59,7 +65,13 @@ export function agentStream({ env, model, input, tools, chatId, options, asConte
 			for (let round = 0; round < MAX_ROUNDS; round++) {
 				// Tools stay defined on every round: without them some models print raw tool-call markup.
 				const stream = await env.AI.run(model, { ...input, messages, tools: defs }, options);
-				const { calls, content } = await relay(asContent ? reasoningAsContent(stream) : stream, send);
+				const { calls, content, failed } = await relay(asContent ? reasoningAsContent(stream) : stream, send, round);
+				if (failed) {
+					// Not handed back to the model: another round could run away the same way.
+					send({ thread: { type: "tool_result", id: failed.id, name: failed.name, result: { error: failed.note } } });
+					send({ error: failed.error });
+					return;
+				}
 				if (!calls.length) break;
 				if (round === MAX_ROUNDS - 1) {
 					send({ choices: [{ index: 0, delta: { content: `\n\n_Stopped after ${MAX_ROUNDS} rounds of tool use._` } }] });
@@ -132,13 +144,17 @@ export function reasoningAsContent(stream) {
 	);
 }
 
-// Reads one model SSE stream, forwards content/reasoning chunks, and collects tool calls.
-export async function relay(stream, send) {
+// Reads one model SSE stream, forwards content/reasoning chunks, and collects tool calls. Announces each call
+// with a tool_prepare event once its arguments start, since they are not forwarded. Returns `failed` instead of
+// calls when a call's arguments pass MAX_ARGS (the stream is cancelled) or the reply hits its length limit
+// while a call is unfinished.
+export async function relay(stream, send, round = 0) {
 	const reader = stream.getReader();
 	const decoder = new TextDecoder();
 	const calls = new Map();
 	let content = "";
 	let buffer = "";
+	let finish = null;
 	for (;;) {
 		const { value, done } = await reader.read();
 		buffer += done ? decoder.decode() + "\n" : decoder.decode(value, { stream: true });
@@ -157,14 +173,30 @@ export async function relay(stream, send) {
 			}
 			const choice = evt.choices?.find((c) => (c.index ?? 0) === 0);
 			const delta = choice?.delta;
+			if (choice?.finish_reason) finish = choice.finish_reason;
 			if (delta?.tool_calls) {
 				for (const tc of delta.tool_calls) {
 					const key = tc.index ?? 0;
-					const call = calls.get(key) || { id: "", name: "", args: "" };
-					call.id ||= tc.id || "";
+					const call = calls.get(key) || { id: "", name: "", args: "", announced: false };
+					// Ids are fixed at the first fragment so the tool_prepare and tool_start events agree.
+					call.id ||= tc.id || `call_${round}_${key}`;
 					call.name += tc.function?.name || "";
 					call.args += tc.function?.arguments || "";
 					calls.set(key, call);
+					if (!call.announced && call.name && call.args) {
+						call.announced = true;
+						send({ thread: { type: "tool_prepare", id: call.id, name: call.name } });
+					}
+					if (call.args.length > maxArgs(call.name)) {
+						reader.cancel().catch(() => {});
+						const limit = maxArgs(call.name).toLocaleString("en-US");
+						const error = `The model kept writing one ${TOOL_LABEL[call.name] || "tool"} call past ${limit} characters, so the reply was stopped. Regenerate to try again.`;
+						return { calls: [], content, failed: { id: call.id, name: call.name, error, note: `Not run: it grew past ${limit} characters.` } };
+					}
+				}
+				// A chunk that ends the reply can carry the last fragment; its finish reason still has to reach the app.
+				if (choice?.finish_reason && choice.finish_reason !== "tool_calls") {
+					send({ choices: [{ index: 0, delta: {}, finish_reason: choice.finish_reason }] });
 				}
 				continue;
 			}
@@ -174,8 +206,12 @@ export async function relay(stream, send) {
 		}
 		if (done) break;
 	}
-	const list = [...calls.values()].filter((c) => c.name);
-	list.forEach((c, i) => (c.id ||= `call_${i}`));
+	const list = [...calls.values()].filter((c) => c.name).map(({ id, name, args }) => ({ id, name, args }));
+	if (list.length && finish === "length") {
+		const last = list.at(-1);
+		const error = "The reply hit its length limit while the model was writing a tool call, so the call wasn't run. Raise Max output tokens in the model's settings, or regenerate.";
+		return { calls: [], content, failed: { id: last.id, name: last.name, error, note: "Not run: the reply hit its length limit first." } };
+	}
 	return { calls: list, content };
 }
 

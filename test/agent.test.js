@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_ROUNDS, agentStream, reasoningAsContent, relay, sanitizeTools } from "../src/agent.js";
+import { MAX_ARGS, MAX_ROUNDS, agentStream, reasoningAsContent, relay, sanitizeTools } from "../src/agent.js";
 
 const sse = (events) =>
 	new ReadableStream({
@@ -63,8 +63,76 @@ test("relay forwards content, hides tool-call fragments, and assembles calls", a
 	const { calls, content } = await relay(sse([delta({ content: "Let me run it. " }), ...toolCall("run_python", '{"code":"1"}')]), (d) => sent.push(d));
 	assert.equal(content, "Let me run it. ");
 	assert.deepEqual(calls, [{ id: "call_1", name: "run_python", args: '{"code":"1"}' }]);
-	assert.equal(sent.length, 1);
+	assert.equal(sent.length, 2);
 	assert.match(sent[0], /Let me run it/);
+	assert.deepEqual(sent[1], { thread: { type: "tool_prepare", id: "call_1", name: "run_python" } });
+});
+
+// A model stream that keeps writing one call's arguments until it is cancelled.
+function endless(name, id) {
+	let n = 0;
+	const state = { cancelled: false, chunks: 0 };
+	const stream = new ReadableStream({
+		pull(c) {
+			const evt = n++ === 0
+				? delta({ tool_calls: [{ index: 0, id, type: "function", function: { name, arguments: '{"url":"https://e.com/' } }] })
+				: delta({ tool_calls: [{ index: 0, function: { arguments: "a".repeat(100) } }] });
+			state.chunks++;
+			c.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(evt)}\n\n`));
+		},
+		cancel() {
+			state.cancelled = true;
+		},
+	});
+	return { stream, state };
+}
+
+test("a call that runs past its argument limit cancels the model and ends the reply with an error", async () => {
+	const { stream, state } = endless("fetch_url", "c9");
+	let calls = 0;
+	const env = { AI: { run: async () => (calls++, stream) }, BROWSER: { quickAction: async () => assert.fail("must not run") } };
+	const events = await collect(agentStream({ env, tools: ["web"], ...base }));
+	assert.ok(state.cancelled);
+	assert.ok(state.chunks * 100 < MAX_ARGS.fetch_url + 400, "stopped soon after the limit");
+	assert.equal(calls, 1, "the failure is not handed back to the model");
+	assert.deepEqual(events[0], { thread: { type: "tool_prepare", id: "c9", name: "fetch_url" } });
+	assert.equal(events[1].thread.type, "tool_result");
+	assert.equal(events[1].thread.id, "c9");
+	assert.equal(events[1].thread.result.error, "Not run: it grew past 4,000 characters.");
+	assert.match(events[2].error, /past 4,000 characters/);
+	assert.equal(events.length, 3);
+});
+
+test("a call cut off by the length limit is not run", async () => {
+	const cut = [
+		delta({ tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "run_python", arguments: '{"code":"pri' } }] }),
+		delta({}, "length"),
+		"[DONE]",
+	];
+	const { env, requests } = makeEnv([cut], { sandbox: async () => assert.fail("must not run") });
+	const events = await collect(agentStream({ env, tools: ["python"], ...base }));
+	assert.equal(requests.length, 1);
+	assert.ok(events.some((e) => e.choices?.[0]?.finish_reason === "length"), "the app still learns the reply hit the limit");
+	assert.equal(events.find((e) => e.thread?.type === "tool_result").thread.id, "c1");
+	assert.match(events.at(-1).error, /length limit while the model was writing a tool call/);
+	assert.ok(!events.some((e) => e.thread?.type === "tool_start"));
+});
+
+test("tool_prepare and tool_start share an id, including a generated one", async () => {
+	const noId = [
+		delta({ tool_calls: [{ index: 0, type: "function", function: { name: "run_python", arguments: '{"code":' } }] }),
+		delta({ tool_calls: [{ index: 0, function: { arguments: '"1"}' } }] }, "stop"),
+		"[DONE]",
+	];
+	const { env } = makeEnv([noId, answer("ok")]);
+	const events = await collect(agentStream({ env, tools: ["python"], ...base }));
+	const prepare = events.find((e) => e.thread?.type === "tool_prepare");
+	const start = events.find((e) => e.thread?.type === "tool_start");
+	assert.equal(prepare.thread.id, "call_0_0");
+	assert.equal(start.thread.id, prepare.thread.id);
+	// The chunk that carried the last fragment and the finish reaches the app as the finish alone.
+	const finish = events.find((e) => e.choices?.[0]?.finish_reason === "stop");
+	assert.deepEqual(finish.choices[0].delta, {});
 });
 
 test("python tool round trip", async () => {

@@ -67,16 +67,28 @@ export function createGeneral(deps) {
 		box.placeholder = "e.g. Keep answers short. Use metric units.";
 		box.setAttribute("aria-label", "Instructions");
 		box.value = instructions;
+		const status = el("p", "note");
+		status.setAttribute("role", "status");
+		status.hidden = true;
+		let timer = 0;
 		box.addEventListener("input", () => {
 			instructions = box.value;
-			storage.set(KEY_INSTRUCTIONS, instructions);
+			const saved = storage.set(KEY_INSTRUCTIONS, instructions) !== false;
+			// Announced once typing pauses, so a screen reader doesn't read it on every keystroke.
+			clearTimeout(timer);
+			timer = setTimeout(() => {
+				status.textContent = saved
+					? "Saved. Your next message uses it, in this chat and every other."
+					: "Couldn't save on this device. It applies until Thread is closed.";
+				status.hidden = false;
+			}, 500);
 		});
 		const hint = el(
 			"p",
 			"hint",
-			"Sent to the model as the system message in every chat, ahead of your messages. Use it for anything you always want, like the tone or length of replies.",
+			"Sent to the model as the system message, ahead of your messages, with every message you send from now on, in new chats and ones already open. It saves as you type; there's nothing to confirm. Use it for anything you always want, like the tone or length of replies.",
 		);
-		return group("Instructions", box, hint);
+		return group("Instructions", box, status, hint);
 	}
 
 	function wordsGroup() {
