@@ -168,7 +168,8 @@ const CHAT_EXTRA_KEYS = [
 // Every chat model rejects top_p 0 (HTTP 400, 500 on Nemotron), whatever its schema says.
 const TOP_P_FLOOR = { min: 0.001 };
 
-// options.seed = false leaves seed out for models where repeated runs with the same seed did not match.
+// options.seed = false leaves seed out for models where repeated runs with the same seed did not match;
+// options.bias = false leaves logit_bias out for models the service refuses it on.
 const chatControls = (context, reasoning, options = {}) => [
 	...reasoning,
 	temperature(),
@@ -179,7 +180,7 @@ const chatControls = (context, reasoning, options = {}) => [
 	stop,
 	...(options.seed === false ? [] : [seed()]),
 	responseFormat(["json_object"]),
-	logitBias,
+	...(options.bias === false ? [] : [logitBias]),
 ];
 
 const UNUSABLE_ABOVE_2 = "You can go up to 5, but replies turned to nonsense above about 2 in testing.";
@@ -222,6 +223,9 @@ const olderControls = ({ reasoning = [], temp, penalties = [frequencyPenalty, pr
 
 const OLDER_EXTRA_KEYS = ["functions", "max_tokens", "raw", "tools"];
 
+// developer: true where a developer message was followed in testing, alone and next to a system message.
+// The others get the developer instructions at the end of the system message instead: DeepSeek, GLM-5.3 Flash
+// and gpt-oss-120b dropped a developer message (gpt-oss-120b's reply broke with one alone), Mistral rejects it.
 export const MODELS = [
 	{
 		id: "@cf/zai-org/glm-5.3-flash",
@@ -243,6 +247,7 @@ export const MODELS = [
 		price: [0.1, 0.3],
 		tokenizer: "gemma",
 		voiceParams: THINKING_OFF,
+		developer: true,
 		controls: chatControls(256000, [enableThinking()], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
@@ -253,9 +258,30 @@ export const MODELS = [
 		vision: false,
 		context: 131000,
 		price: [0.017, 0.112],
+		developer: true,
 		controls: olderControls({
 			temp: { max: 5, note: UNUSABLE_ABOVE_2 },
 			max: maxTokens(131000, DEFAULT_MAX_TOKENS, { help: MAX_TOKENS_HELP }),
+		}),
+		extraKeys: OLDER_EXTRA_KEYS,
+	},
+	{
+		id: "@cf/daily-co/phonellm-mini-alpha-2",
+		name: "PhoneLLM Mini",
+		vendor: "Daily",
+		vision: false,
+		context: 262140,
+		price: [0.06, 0.24],
+		// Built on Nemotron Nano; banned words found through the Nemotron word list worked in testing.
+		tokenizer: "nemotron",
+		developer: true,
+		controls: olderControls({
+			// The schema says up to 5; the service refuses anything above 2.
+			temp: { max: 2 },
+			// At 0.7 and below replies repeated themselves or came back empty.
+			repetition: { min: 0.8 },
+			max: maxTokens(262140, DEFAULT_MAX_TOKENS, { help: MAX_TOKENS_HELP }),
+			bias: [logitBias],
 		}),
 		extraKeys: OLDER_EXTRA_KEYS,
 	},
@@ -267,6 +293,7 @@ export const MODELS = [
 		context: 128000,
 		price: [0.2, 0.3],
 		tokenizer: "gptoss",
+		developer: true,
 		controls: olderControls({
 			reasoning: [reasoningEffort(["low", "medium", "high"], "medium", ALWAYS_THINKS)],
 			// Outside these limits replies came back empty or as garbage with leaked format tokens.
@@ -286,6 +313,7 @@ export const MODELS = [
 		context: 24000,
 		price: [0.293, 2.253],
 		defaultMaxTokens: 4096,
+		developer: true,
 		controls: olderControls({
 			// The schema allows up to 5; the service rejects values above 2.
 			temp: {},
@@ -295,6 +323,18 @@ export const MODELS = [
 			}),
 		}),
 		extraKeys: OLDER_EXTRA_KEYS,
+	},
+	{
+		id: "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+		name: "DeepSeek V4.1 Flash",
+		vendor: "DeepSeek",
+		vision: true,
+		context: 1048576,
+		price: [0.3, 1.2],
+		voiceParams: THINKING_OFF,
+		// No tokenizer: the service refuses logit_bias on this model ("not yet supported with speculative decoding").
+		controls: chatControls(1048576, [reasoningEffort(["max", "high", "low"], "high", THINKING_TOGGLE), enableThinking()], { seed: false, bias: false }),
+		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
 		id: "@cf/openai/gpt-oss-120b",
@@ -353,6 +393,7 @@ export const MODELS = [
 		price: [0.45, 3.2],
 		tokenizer: "qwen",
 		voiceParams: THINKING_OFF,
+		developer: true,
 		controls: chatControls(262144, [reasoningEffort(["xhigh", "medium", "low"], "xhigh", THINKING_TOGGLE), enableThinking()]),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
@@ -367,6 +408,7 @@ export const MODELS = [
 		voiceParams: THINKING_OFF,
 		// With Thinking off the service streams the reply in the reasoning field; the Worker moves it into content.
 		replyInReasoningWhenThinkingOff: true,
+		developer: true,
 		controls: chatControls(256000, [
 			enableThinking({ help: `${THINKING_HELP} This model has no Reasoning effort setting; use Low-effort thinking to make it think less.` }),
 			lowEffort,
@@ -382,6 +424,7 @@ export const MODELS = [
 		price: [0.95, 4],
 		tokenizer: "kimi",
 		voiceParams: { reasoning_effort: "none" },
+		developer: true,
 		controls: chatControls(262144, [reasoningEffort(["high", "none"], "high", "Choose None to skip thinking.")], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
@@ -393,6 +436,7 @@ export const MODELS = [
 		context: 262144,
 		price: [0.95, 4],
 		tokenizer: "kimi",
+		developer: true,
 		controls: chatControls(262144, [], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
@@ -416,6 +460,7 @@ export const MODELS = [
 		context: 1048576,
 		price: [1.4, 4.4],
 		tokenizer: "glm",
+		developer: true,
 		controls: chatControls(1048576, [reasoningEffort(["max", "high", "low"], "max", ALWAYS_THINKS)], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},

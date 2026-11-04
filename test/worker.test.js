@@ -623,3 +623,42 @@ test("replies with a reply id run in that reply's Durable Object; follow and can
 	assert.equal((await worker.fetch(req(`/api/chat/cancel?id=${id}`), env)).status, 405);
 	assert.equal(seen.length, 3);
 });
+
+test("developer instructions: their own message on models that follow one, the end of the system message elsewhere", async () => {
+	const { env, calls } = makeEnv();
+	const post = (model, extra) =>
+		worker.fetch(req("/api/chat", { method: "POST", body: { model, messages: [{ role: "user", content: "hi" }], ...extra } }), env);
+	const withDev = MODELS.find((m) => m.developer).id;
+	const withoutDev = MODELS.find((m) => !m.developer).id;
+	await post(withDev, { instructions: "Be brief.", developer: "No Markdown." });
+	assert.deepEqual(calls.at(-1).input.messages.slice(0, 3), [
+		{ role: "system", content: "Be brief." },
+		{ role: "developer", content: "No Markdown." },
+		{ role: "user", content: "hi" },
+	]);
+	await post(withoutDev, { instructions: "Be brief.", developer: "No Markdown." });
+	assert.deepEqual(calls.at(-1).input.messages.slice(0, 2), [
+		{ role: "system", content: "Be brief.\n\nNo Markdown." },
+		{ role: "user", content: "hi" },
+	]);
+	await post(withDev, { developer: "  No Markdown.  " });
+	assert.deepEqual(calls.at(-1).input.messages.slice(0, 2), [
+		{ role: "developer", content: "No Markdown." },
+		{ role: "user", content: "hi" },
+	]);
+	await post(withoutDev, { developer: "No Markdown." });
+	assert.deepEqual(calls.at(-1).input.messages[0], { role: "system", content: "No Markdown." });
+	assert.equal((await post(withDev, { developer: 5 })).status, 400);
+	assert.match(await (await post(withDev, { developer: "x".repeat(20001) })).text(), /Developer instructions are limited/);
+});
+
+test("the models added in November have the settings testing found", () => {
+	const phone = MODELS.find((m) => m.id === "@cf/daily-co/phonellm-mini-alpha-2");
+	const v41 = MODELS.find((m) => m.id === "@cf/deepseek-ai/deepseek-v4.1-flash-1017");
+	const control = (m, key) => m.controls.find((c) => c.key === key);
+	assert.equal(control(phone, "temperature").max, 2);
+	assert.equal(control(phone, "repetition_penalty").min, 0.8);
+	assert.ok(control(phone, "seed") && control(phone, "logit_bias") && phone.tokenizer === "nemotron");
+	assert.ok(v41.vision && !v41.tokenizer && !control(v41, "logit_bias") && !control(v41, "seed"));
+	assert.deepEqual(v41.voiceParams, { chat_template_kwargs: { enable_thinking: false } });
+});

@@ -142,8 +142,11 @@ async function chat(request, env) {
 	const voice = sanitizeVoice(body.voice);
 	const params = sanitizeParams(body.params, model);
 	if (voice) applyVoiceParams(params, model);
-	const instructions = [sanitizeInstructions(body.instructions), voice && voiceInstruction(voice)].filter(Boolean).join("\n\n");
-	if (instructions) messages.unshift({ role: "system", content: instructions });
+	// Developer instructions are their own message on models that follow one, else the end of the system message.
+	const developer = sanitizeInstructions(body.developer, "developer");
+	const system = [sanitizeInstructions(body.instructions), !model.developer && developer, voice && voiceInstruction(voice)].filter(Boolean).join("\n\n");
+	if (model.developer && developer) messages.unshift({ role: "developer", content: developer });
+	if (system) messages.unshift({ role: "system", content: system });
 	let tools;
 	try {
 		tools = sanitizeTools(body.tools);
@@ -273,10 +276,11 @@ function applyVoiceParams(params, model) {
 	}
 }
 
-export function sanitizeInstructions(input) {
+export function sanitizeInstructions(input, field = "instructions") {
 	if (input === undefined || input === null) return "";
-	if (typeof input !== "string") throw new HttpError(400, "instructions must be a string.");
-	if (input.length > MAX_INSTRUCTIONS) throw new HttpError(400, `Instructions are limited to ${MAX_INSTRUCTIONS} characters.`);
+	if (typeof input !== "string") throw new HttpError(400, `${field} must be a string.`);
+	const label = field === "developer" ? "Developer instructions" : "Instructions";
+	if (input.length > MAX_INSTRUCTIONS) throw new HttpError(400, `${label} are limited to ${MAX_INSTRUCTIONS} characters.`);
 	return input.trim();
 }
 

@@ -888,6 +888,7 @@ async function respond(chat, params, hooks = {}) {
 		messages: history,
 		params,
 		instructions: general.instructions(),
+		developer: general.developer() || undefined,
 		tools: chat.tools?.length ? chat.tools : undefined,
 		chatId: chat.id,
 		voice: hooks.voice,

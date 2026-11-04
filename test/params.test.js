@@ -196,6 +196,7 @@ test("only the models with a vision input accept images", () => {
 	assert.deepEqual(
 		MODELS.filter((m) => m.vision).map((m) => m.id).sort(),
 		[
+			"@cf/deepseek-ai/deepseek-v4.1-flash-1017",
 			"@cf/google/gemma-4-26b-a4b-it",
 			"@cf/mistralai/mistral-small-3.1-24b-instruct",
 			"@cf/moonshotai/kimi-k2.6",
@@ -210,7 +211,7 @@ test("every model's voice overrides are valid parameters for that model", () => 
 	const withOverrides = MODELS.filter((m) => m.voiceParams);
 	assert.deepEqual(
 		withOverrides.map((m) => m.name).sort(),
-		["DeepSeek V4 Flash", "DeepSeek V4 Pro", "Gemma 4 26B", "Kimi K2.6", "Nemotron 3 120B", "Qwen 3.8 27B"],
+		["DeepSeek V4 Flash", "DeepSeek V4 Pro", "DeepSeek V4.1 Flash", "Gemma 4 26B", "Kimi K2.6", "Nemotron 3 120B", "Qwen 3.8 27B"],
 	);
 	for (const m of withOverrides) assert.deepEqual(sanitizeParams(m.voiceParams, m), m.voiceParams, m.id);
 });
@@ -289,7 +290,7 @@ test("controls that had no measurable effect are not offered", () => {
 		if (format) assert.ok(!format.options.includes("text"), m.id);
 	}
 	const seeded = MODELS.filter((m) => keys(m).includes("seed")).map((m) => m.name).sort();
-	assert.deepEqual(seeded, ["Granite 4.0 Micro", "Llama 3.3 70B", "Mistral Small 3.1", "Nemotron 3 120B", "Qwen 3.8 27B", "gpt-oss-120b", "gpt-oss-20b"]);
+	assert.deepEqual(seeded, ["Granite 4.0 Micro", "Llama 3.3 70B", "Mistral Small 3.1", "Nemotron 3 120B", "PhoneLLM Mini", "Qwen 3.8 27B", "gpt-oss-120b", "gpt-oss-20b"]);
 	assert.ok(!keys(KIMI).includes("enable_thinking"));
 	assert.deepEqual(keys(KIMI_CODE).filter((k) => KIMI_CODE.controls.find((c) => c.key === k).group === "Thinking"), []);
 });
