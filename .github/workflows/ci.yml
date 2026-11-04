@@ -10,6 +10,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Checks and the deploy only read the repository; the deploy authenticates to Cloudflare with its own secrets.
+permissions:
+  contents: read
+
 env:
   WRANGLER: wrangler@4.147.0
 
