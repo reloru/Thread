@@ -16,8 +16,10 @@ Live: https://thread.reloru.workers.dev
 | GLM-5.3 Flash (default) | yes | 0.15 / 0.50 |
 | Gemma 4 26B | yes | 0.10 / 0.30 |
 | Granite 4.0 Micro | no | 0.017 / 0.112 |
+| PhoneLLM Mini (Daily, built on Nemotron Nano; tuned for voice agents) | no | 0.06 / 0.24 |
 | gpt-oss-20b | no | 0.20 / 0.30 |
 | Llama 3.3 70B (fp8-fast) | no | 0.293 / 2.253 |
+| DeepSeek V4.1 Flash | yes | 0.30 / 1.20 |
 | gpt-oss-120b | no | 0.35 / 0.75 |
 | Mistral Small 3.1 | yes | 0.351 / 0.555 |
 | DeepSeek V4 Flash | no | 0.44 / 1.32 |
@@ -28,10 +30,11 @@ Live: https://thread.reloru.workers.dev
 | DeepSeek V4 Pro | no | 1.32 / 3.96 |
 | GLM-5.3 | no | 1.40 / 4.40 |
 
-- Settings (gear at the bottom of the chat list): instructions sent as the system message with every message from then on, in new chats and open ones (saved as you type, no Save button), banned words, notifications on or off for this device, and appearance (System, Light or Dark; `public/theme.js` applies the choice before the page renders).
+- Settings (gear at the bottom of the chat list): instructions sent with every message from then on, in new chats and open ones (saved as you type, no Save button), banned words, notifications on or off for this device, and appearance (System, Light or Dark; `public/theme.js` applies the choice before the page renders).
+- Instructions come in two fields. System is sent as the system message. Developer is sent as a separate developer message, after it, on the models that followed one in testing (`developer: true` in `src/models.js`): Gemma, Granite, PhoneLLM, gpt-oss-20b, Llama 3.3, Qwen, Nemotron, both Kimis and GLM-5.3. The DeepSeeks, GLM-5.3 Flash and gpt-oss-120b silently drop a developer message (gpt-oss-120b's reply broke with one alone), and Mistral refuses the role, so on those the developer text is added to the end of the system message. Message `name`s and multi-part system content aren't offered: no model could see a `name`, and Granite, Llama and gpt-oss refuse multi-part system content.
 - Model settings (gear in the model picker): max output tokens, stop sequences, reasoning effort and thinking toggles, temperature, top P/K, seed and penalties. Ranges and options follow each model's schema, narrowed where the service rejects or mishandles values. Controls that had no measurable effect in testing are not offered (for example seed on several models, Clear thinking, Skip special tokens).
   - An empty field shows, greyed out, what applies without a value of your own: the max output tokens the app always sends (some models stop after 256 tokens without it), otherwise the default in the model's schema. Choice rows show the default option selected in grey. Nothing but max output tokens is sent until you change it; – means the schema documents no default.
-  - Banned words (a list in Settings, a switch per model): each word is looked up in the model's tokenizer word list (`public/vocab/<family>.json`) and sent as `logit_bias` -100 for its spellings " word", " Word" and "Word"; "with no space before it" adds "word" (after a quote, bracket or `**`, and in code). Only a spelling that is a single token can be blocked; a word whose " word" is split into pieces is reported as not blockable on that model. Models that don't accept logit bias (Llama 3.3, Granite, Mistral) don't have it. A ban stops a token, not a meaning: models answer with a synonym, a near-spelling ("honesty") or, in gpt-oss, a soft hyphen inside the word. If the list can't be loaded the message isn't sent.
+  - Banned words (a list in Settings, a switch per model): each word is looked up in the model's tokenizer word list (`public/vocab/<family>.json`) and sent as `logit_bias` -100 for its spellings " word", " Word" and "Word"; "with no space before it" adds "word" (after a quote, bracket or `**`, and in code). Only a spelling that is a single token can be blocked; a word whose " word" is split into pieces is reported as not blockable on that model. Models that don't accept logit bias (Llama 3.3, Granite, Mistral, DeepSeek V4.1 Flash) don't have it. A ban stops a token, not a meaning: models answer with a synonym, a near-spelling ("honesty") or, in gpt-oss, a soft hyphen inside the word. If the list can't be loaded the message isn't sent.
   - The Worker validates every parameter against the same rules (`public/params.js`). It still accepts response format and the schema fields that have no control (tools, n, logprobs, …) in `params`; the app no longer offers them.
 - Tools, switched on per chat with the chips above the composer:
   - **Code**: the model runs Python in an isolated Cloudflare Container (one per chat, standard-3: 2 vCPU, 8 GiB RAM; no internet; numpy/pandas/matplotlib/scipy/sympy; 60 s per run). Output and figures appear inline; variables and files persist while the container is awake (it sleeps after 10 idle minutes).

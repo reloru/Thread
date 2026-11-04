@@ -1,8 +1,9 @@
-// Settings page: instructions sent with every chat, banned words, notifications for this device, and appearance.
+// Settings page: system and developer instructions sent with every chat, banned words, notifications for this device, and appearance.
 
 import { MAX_WORDS } from "./words.js";
 
 const KEY_INSTRUCTIONS = "thread.instructions";
+const KEY_DEVELOPER = "thread.developer";
 const KEY_THEME = "thread.theme";
 const THEMES = [
 	["system", "System"],
@@ -46,10 +47,13 @@ export function switchRow(el, { title, sub, checked, onToggle }) {
 export function createGeneral(deps) {
 	const { storage, el, icon, notify, words, currentModel } = deps;
 	let instructions = storage.get(KEY_INSTRUCTIONS) || "";
+	let developer = storage.get(KEY_DEVELOPER) || "";
 
 	return {
 		/** Sent as the system message with every chat request. */
 		instructions: () => instructions.trim(),
+		/** Sent as a developer message, or appended to the system message on models that don't follow one. */
+		developer: () => developer.trim(),
 		render(container) {
 			container.replaceChildren(instructionsGroup(), wordsGroup(), notificationsGroup(), appearanceGroup());
 		},
@@ -62,18 +66,55 @@ export function createGeneral(deps) {
 	}
 
 	function instructionsGroup() {
+		const system = instructionBox({
+			id: "set-system",
+			label: "System",
+			placeholder: "e.g. Keep answers short. Use metric units.",
+			value: () => instructions,
+			save: (text) => {
+				instructions = text;
+				return storage.set(KEY_INSTRUCTIONS, text);
+			},
+			hint: "Sent to the model as the system message, ahead of your messages, with every message you send from now on, in new chats and ones already open. Use it for anything you always want, like the tone or length of replies.",
+		});
+		const dev = instructionBox({
+			id: "set-developer",
+			label: "Developer",
+			placeholder: "e.g. Answer in plain text without Markdown.",
+			value: () => developer,
+			save: (text) => {
+				developer = text;
+				return storage.set(KEY_DEVELOPER, text);
+			},
+			hint: developerHint(currentModel()),
+		});
+		const saves = el("p", "hint", "Both save as you type; there's nothing to confirm.");
+		return group("Instructions", ...system, ...dev, saves);
+	}
+
+	// Says where the developer instructions go on the model in use.
+	function developerHint(model) {
+		const general = "Sent as a separate developer message after the system message, on models that follow one.";
+		if (!model) return general;
+		return model.developer
+			? `${general} ${model.name} does.`
+			: `${general} ${model.name} doesn't (it ignores or refuses one), so on it they're added to the end of the system message.`;
+	}
+
+	function instructionBox({ id, label, placeholder, value, save, hint }) {
+		const head = el("label", "field-label", label);
+		head.htmlFor = id;
 		const box = el("textarea", "set-text");
+		box.id = id;
 		box.rows = 4;
-		box.placeholder = "e.g. Keep answers short. Use metric units.";
-		box.setAttribute("aria-label", "Instructions");
-		box.value = instructions;
+		box.placeholder = placeholder;
+		box.value = value();
 		const status = el("p", "note");
 		status.setAttribute("role", "status");
 		status.hidden = true;
 		let timer = 0;
 		box.addEventListener("input", () => {
-			instructions = box.value;
-			const saved = storage.set(KEY_INSTRUCTIONS, instructions) !== false;
+			const saved = save(box.value) !== false;
 			// Announced once typing pauses, so a screen reader doesn't read it on every keystroke.
 			clearTimeout(timer);
 			timer = setTimeout(() => {
@@ -83,12 +124,7 @@ export function createGeneral(deps) {
 				status.hidden = false;
 			}, 500);
 		});
-		const hint = el(
-			"p",
-			"hint",
-			"Sent to the model as the system message, ahead of your messages, with every message you send from now on, in new chats and ones already open. It saves as you type; there's nothing to confirm. Use it for anything you always want, like the tone or length of replies.",
-		);
-		return group("Instructions", box, status, hint);
+		return [head, box, status, el("p", "hint", hint)];
 	}
 
 	function wordsGroup() {
@@ -173,7 +209,7 @@ export function createGeneral(deps) {
 		const hint = el(
 			"p",
 			"hint",
-			"Words the model is blocked from writing, in every chat. Each ban covers the word as it appears in a sentence or at the start of one (“word”, “Word”). Turn on “with no space before it” to also catch it right after a quote, bracket or **, which can also block it in code. The model can still use a synonym, and a blocked word can make a reply come out odd; if so, turn banned words off for that model in its settings. Llama 3.3, Granite and Mistral don't support this.",
+			"Words the model is blocked from writing, in every chat. Each ban covers the word as it appears in a sentence or at the start of one (“word”, “Word”). Turn on “with no space before it” to also catch it right after a quote, bracket or **, which can also block it in code. The model can still use a synonym, and a blocked word can make a reply come out odd; if so, turn banned words off for that model in its settings. Llama 3.3, Granite, Mistral and DeepSeek V4.1 Flash don't support this.",
 		);
 		return group("Banned words", hint, form, error, list);
 	}
