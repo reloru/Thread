@@ -101,6 +101,10 @@ cp .dev.vars.example .dev.vars && npm run dev
 
 The AI binding always calls the real Workers AI service, so local requests are billed. Tests: `npm test` (Node 22, no dependencies).
 
+### Codespaces
+
+`.devcontainer/devcontainer.json` sets up Node 22, Python 3 and Docker (for the build check), and forwards port 8787 for `wrangler dev`. `hostRequirements.cpus` is 8, so new codespaces default to the 8-core machine and the 2- and 4-core machines can't be picked; 16- and 32-core machines can still be chosen when creating the codespace or later (Change machine type). Usage beyond the account's included hours is billed per core.
+
 ## Layout
 
 - `src/worker.js`: API (`/api/auth`, `/api/models`, `/api/chat`, `/api/usage`, `/api/push/*`), passcode check, request and parameter validation, Workers AI streaming.
