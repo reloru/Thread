@@ -34,9 +34,10 @@ export function toolDefs(tools, { vision = false } = {}) {
 			),
 			fn(
 				"fetch_url",
-				`Open a web page in a real browser (live internet access) and return its main content as Markdown. Use it for URLs the user gives and for the best results of web_search. Very long pages are cut off.${vision ? " Set show_page to also get a screenshot of the top of the page, to see its layout, pictures or charts." : ""}`,
+				`Open a web page in a real browser (live internet access) and return its main content as Markdown. Use it for URLs the user gives and for the best results of web_search. Long pages come back in parts; each part says where the next one starts, so you can read on with start.${vision ? " Set show_page to also get a screenshot of the top of the page, to see its layout, pictures or charts." : ""}`,
 				{
 					url: { type: "string", description: "Absolute http(s) URL." },
+					start: { type: "integer", description: "Character to start reading from, to read on in a long page. Leave it out to read from the beginning." },
 					...(vision ? { show_page: { type: "boolean", description: "Also return a screenshot of the top of the page (1280×800). Slower; use it when the look of the page matters." } } : {}),
 				},
 				["url"],

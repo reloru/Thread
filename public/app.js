@@ -604,6 +604,9 @@ function renderToolRuns(box, tools) {
 				const url = typeof t.args?.url === "string" ? t.args.url : "";
 				line.append(el("span", "", t.running ? "Reading " : r.error ? "Couldn't read " : "Read "));
 				line.append(pageLink(url, hostOf(url) || url || "a page"));
+				// A later part of a long page (fetch_url's start).
+				const from = Number(t.args?.start);
+				if (Number.isSafeInteger(from) && from > 0) line.append(el("span", "", `from ${from.toLocaleString()}`));
 				if (t.running) line.append(el("span", "tool-spin"));
 				run.append(line);
 				if (r.error) run.append(el("div", "error-box", r.error));
