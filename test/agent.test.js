@@ -253,6 +253,7 @@ test("the Web chip gives web_search and fetch_url; show_page is offered to visio
 	assert.deepEqual(names(toolDefs(["python"])), ["run_python"]);
 	const fetch = (vision) => toolDefs(["web"], { vision }).find((d) => d.function.name === "fetch_url").function;
 	assert.ok(fetch(true).parameters.properties.show_page);
+	assert.equal(fetch(false).parameters.properties.start.type, "integer");
 	assert.equal(fetch(false).parameters.properties.show_page, undefined);
 	assert.doesNotMatch(fetch(false).description, /show_page|There is no search/);
 	const python = (tools) => toolDefs(tools).find((d) => d.function.name === "run_python").function.description;
@@ -341,7 +342,8 @@ for (const [model, cap] of [[LLAMA, 6000], [OSS, 20000]]) {
 		assert.equal(events.at(-1), "[DONE]");
 		const pages = (r) => r.messages.filter((m) => m.role === "tool");
 		// Each page is "# <url>\n" (20 characters) and 50,000 more.
-		assert.ok(pages(requests[1]).every((m) => m.content.startsWith("# https://e.com/0-") && m.content.endsWith(`\n… [truncated ${50020 - cap} characters]`)));
+		const more = `\n… [${(50020 - cap).toLocaleString("en-US")} more characters: call fetch_url with start ${cap} to read on]`;
+		assert.ok(pages(requests[1]).every((m) => m.content.startsWith("# https://e.com/0-") && m.content.endsWith(more)));
 		for (const r of requests) assert.ok(estimateTokens(r.messages, r.tools) <= budget.soft, "within the budget");
 		const last = pages(requests.at(-1));
 		assert.equal(last.length, 3 * (MAX_ROUNDS - 1));

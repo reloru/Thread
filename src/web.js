@@ -195,6 +195,8 @@ export const isBlank = (markdown) => !String(markdown ?? "").replace(FRONT_MATTE
  * the Markdown and a JPEG of the top of the page together. A page with no text is loaded again, with everything it
  * asks for and waiting until the network is nearly idle, for pages that draw their content with JavaScript: in testing,
  * crates.io came back empty without its stylesheets and fonts even then, and with 5,825 characters with them.
+ * Long pages come back in parts of maxChars characters; start (a character offset) reads on, and each part ends by
+ * saying where the next one starts. On Wikipedia the first 6,000 characters are menus and language links.
  * Returns { forModel, forUser, image? }: image is a data URL for the loop to show the model.
  */
 export async function readPage(env, args, { vision = false, maxChars }) {
@@ -207,6 +209,11 @@ export async function readPage(env, args, { vision = false, maxChars }) {
 	if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
 		const msg = "fetch_url needs an absolute http(s) URL.";
 		return { forModel: msg, forUser: { error: msg } };
+	}
+	const start = args.start === undefined || args.start === null ? 0 : typeof args.start === "string" && /^\d+$/.test(args.start) ? Number(args.start) : args.start;
+	if (!Number.isSafeInteger(start) || start < 0) {
+		const msg = "start must be a whole number of characters, 0 or more.";
+		return { forModel: msg, forUser: { url: url.href, error: msg } };
 	}
 	const showPage = vision && args.show_page === true;
 	const load = async (retry) => {
@@ -221,13 +228,24 @@ export async function readPage(env, args, { vision = false, maxChars }) {
 	let page = await load(false);
 	if (isBlank(page.markdown)) page = await load(true);
 	const text = page.markdown.trim();
-	const body = isBlank(text) ? "(the page had no readable content)" : truncate(text, maxChars);
+	const body = isBlank(text) ? "(the page had no readable content)" : part(text, start, maxChars);
 	const screenshot = page.screenshot;
 	return {
 		forModel: screenshot ? `${body}\n\n[A screenshot of the top of the page (1280×800) follows in a separate message.]` : body,
-		forUser: { url: url.href, chars: text.length, ...(screenshot ? { screenshot } : {}) },
+		forUser: { url: url.href, chars: text.length, ...(start ? { start } : {}), ...(screenshot ? { screenshot } : {}) },
 		...(screenshot ? { image: `data:image/jpeg;base64,${screenshot}` } : {}),
 	};
+}
+
+const count = (n) => n.toLocaleString("en-US");
+
+/** The part of a page's text from `start`, at most `max` characters, saying where it sits and how to read on. */
+export function part(text, start, max) {
+	if (start >= text.length) return `The page has ${count(text.length)} characters, so there is nothing from start ${count(start)} on.`;
+	const end = Math.min(text.length, start + max);
+	const head = start > 0 ? `[Characters ${count(start)} to ${count(end)} of ${count(text.length)}]\n\n` : "";
+	const tail = end < text.length ? `\n… [${count(text.length - end)} more characters: call fetch_url with start ${end} to read on]` : "";
+	return `${head}${text.slice(start, end)}${tail}`;
 }
 
 export const truncate = (text, max) => (text.length > max ? `${text.slice(0, max)}\n… [truncated ${text.length - max} characters]` : text);

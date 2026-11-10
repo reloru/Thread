@@ -131,11 +131,25 @@ test("fetch_url reads Markdown without images, styles, fonts or media, and retri
 	assert.equal((await readPage(blank.env, { url: "https://e.com" }, { maxChars: 100 })).forModel, "(the page had no readable content)");
 });
 
-test("fetch_url cuts pages to the given length", async () => {
-	const { env } = searchEnv([respond({ success: true, result: "x".repeat(7000) })]);
-	const out = await readPage(env, { url: "https://e.com" }, { maxChars: 6000 });
-	assert.equal(out.forModel, `${"x".repeat(6000)}\n… [truncated 1000 characters]`);
-	assert.equal(out.forUser.chars, 7000);
+test("fetch_url returns long pages in parts, each saying where the next starts", async () => {
+	const page = "a".repeat(5000) + "b".repeat(5000) + "c".repeat(2000);
+	const read = async (args) => {
+		const { env, calls } = searchEnv([respond({ success: true, result: page })]);
+		return { ...(await readPage(env, { url: "https://e.com", ...args }, { maxChars: 5000 })), calls };
+	};
+	const first = await read({});
+	assert.equal(first.forModel, `${"a".repeat(5000)}\n… [7,000 more characters: call fetch_url with start 5000 to read on]`);
+	assert.deepEqual(first.forUser, { url: "https://e.com/", chars: 12000 });
+	const second = await read({ start: 5000 });
+	assert.equal(second.forModel, `[Characters 5,000 to 10,000 of 12,000]\n\n${"b".repeat(5000)}\n… [2,000 more characters: call fetch_url with start 10000 to read on]`);
+	assert.equal(second.forUser.start, 5000);
+	assert.equal((await read({ start: "10000" })).forModel, `[Characters 10,000 to 12,000 of 12,000]\n\n${"c".repeat(2000)}`);
+	assert.equal((await read({ start: 12000 })).forModel, "The page has 12,000 characters, so there is nothing from start 12,000 on.");
+	for (const start of [-1, 1.5, "x", true]) {
+		const bad = await read({ start });
+		assert.equal(bad.forModel, "start must be a whole number of characters, 0 or more.", String(start));
+		assert.equal(bad.calls.length, 0);
+	}
 });
 
 test("show_page: vision models get one /snapshot with Markdown and a JPEG; other models ignore it", async () => {
