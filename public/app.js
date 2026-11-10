@@ -531,11 +531,68 @@ function renderAssistant(view, msg, live) {
 	view.meta.textContent = [modelLabel(msg.model), ...notes].filter(Boolean).join(" · ");
 }
 
+// Links to pages named by tool results (search results come from third-party pages): http(s) only, text only.
+function pageLink(url, text) {
+	if (!/^https?:\/\//i.test(url || "")) return el("span", "", text);
+	const a = el("a", "", text);
+	a.href = url;
+	a.target = "_blank";
+	a.rel = "noopener noreferrer";
+	return a;
+}
+
+function hostOf(url) {
+	try {
+		return new URL(url).host;
+	} catch {
+		return "";
+	}
+}
+
+function renderSearch(run, t) {
+	const r = t.result || {};
+	const query = typeof t.args?.query === "string" ? t.args.query : "";
+	const label = t.preparing ? "Writing a search" : `${t.running ? "Searching" : r.error ? "Couldn't search" : "Searched"} “${query}”`;
+	const results = Array.isArray(r.results) ? r.results : [];
+	if (!results.length) {
+		const line = el("div", "tool-line");
+		line.append(icon("i-search"), el("span", "tool-label", label));
+		if (t.running) line.append(el("span", "tool-spin"));
+		run.append(line);
+		if (r.error) run.append(el("div", "error-box", r.error));
+		return run;
+	}
+	// The result links fold away so a reply with a few searches stays short on a phone.
+	const details = el("details", "tool-details");
+	const summary = el("summary");
+	summary.append(icon("i-search"), el("span", "tool-label", label), el("span", "tool-count", `${results.length}`), icon("i-chev"));
+	const list = el("ol", "tool-results");
+	for (const item of results) {
+		const li = el("li");
+		li.append(pageLink(item.url, String(item.title || item.url || "")), el("span", "tool-host", hostOf(item.url)));
+		list.append(li);
+	}
+	details.append(summary, list);
+	run.append(details);
+	return run;
+}
+
 function renderToolRuns(box, tools) {
 	box.replaceChildren(
 		...tools.map((t) => {
 			const run = el("div", "tool-run");
 			const r = t.result || {};
+			if (t.name === "web_search") return renderSearch(run, t);
+			if (t.name !== "fetch_url" && t.name !== "run_python") {
+				// A tool that doesn't exist (gpt-oss calls the find tool of its own browser): the call and its error.
+				const line = el("div", "tool-line");
+				const name = String(t.name || "").replace(/<\|[\s\S]*$/, "").slice(0, 40) || "a tool";
+				line.append(icon("i-x"), el("span", "tool-label", `${t.preparing || t.running ? "Calling" : "Called"} ${name}`));
+				if (t.running) line.append(el("span", "tool-spin"));
+				run.append(line);
+				if (r.error) run.append(el("div", "error-box", r.error));
+				return run;
+			}
 			if (t.name === "fetch_url") {
 				const line = el("div", "tool-line");
 				line.append(icon("i-globe"));
@@ -544,21 +601,20 @@ function renderToolRuns(box, tools) {
 					run.append(line);
 					return run;
 				}
-				let host = t.args?.url || "";
-				try {
-					host = new URL(host).host;
-				} catch {}
+				const url = typeof t.args?.url === "string" ? t.args.url : "";
 				line.append(el("span", "", t.running ? "Reading " : r.error ? "Couldn't read " : "Read "));
-				if (/^https?:\/\//.test(t.args?.url || "")) {
-					const a = el("a", "", host);
-					a.href = t.args.url;
-					a.target = "_blank";
-					a.rel = "noopener noreferrer";
-					line.append(a);
-				} else line.append(el("span", "", host || "a page"));
+				line.append(pageLink(url, hostOf(url) || url || "a page"));
 				if (t.running) line.append(el("span", "tool-spin"));
 				run.append(line);
 				if (r.error) run.append(el("div", "error-box", r.error));
+				if (typeof r.screenshot === "string" && r.screenshot) {
+					const imgs = el("div", "tool-images");
+					const img = el("img");
+					img.src = `data:image/jpeg;base64,${r.screenshot}`;
+					img.alt = `Screenshot of ${hostOf(url) || "the page"}`;
+					imgs.append(img);
+					run.append(imgs);
+				}
 				return run;
 			}
 			const details = el("details", "tool-details");
@@ -734,6 +790,10 @@ function fileText(files) {
 	return files.map((f) => `[File: ${f.name}${f.truncated ? " (truncated)" : ""}]\n${f.text}`).join("\n\n");
 }
 
+function localDate(d = new Date()) {
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // Earlier tool use is replayed as text so stored chats stay valid for any model.
 function toolSummary(tools) {
 	if (!tools?.length) return "";
@@ -741,10 +801,13 @@ function toolSummary(tools) {
 		.map((t) => {
 			const r = t.result || {};
 			if (t.name === "fetch_url") return `(Earlier tool use: read ${t.args?.url || "a page"}${r.error ? `, which failed: ${r.error}` : ""}.)`;
+			if (t.name === "web_search") return `(Earlier tool use: searched the web for “${t.args?.query || ""}”${r.error ? `, which failed: ${r.error}` : ""}.)`;
+			if (t.name !== "run_python") return "";
 			const output = [r.stdout, r.stderr, r.error].filter(Boolean).join("\n").slice(0, 2000) || "(no output)";
 			const figs = r.images?.length ? `\n(${r.images.length} figure(s) were shown to the user.)` : "";
 			return `(Earlier tool use: ran Python.)\n\`\`\`python\n${t.args?.code ?? ""}\n\`\`\`\nOutput:\n${output}${figs}`;
 		})
+		.filter(Boolean)
 		.join("\n\n");
 }
 
@@ -892,6 +955,8 @@ async function respond(chat, params, hooks = {}) {
 		tools: chat.tools?.length ? chat.tools : undefined,
 		chatId: chat.id,
 		voice: hooks.voice,
+		// The device's date, for the note the Worker adds when tools are on.
+		today: localDate(),
 		// The reply runs on the server under this id, so it can be picked back up after a lost connection.
 		replyId: msg.id,
 	});

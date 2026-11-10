@@ -1,0 +1,17 @@
+{
+ "success": true,
+ "result": [
+  {
+   "selector": "a.result__a",
+   "results": []
+  },
+  {
+   "selector": "a.result__snippet",
+   "results": []
+  }
+ ],
+ "meta": {
+  "status": 202,
+  "title": ""
+ }
+}
