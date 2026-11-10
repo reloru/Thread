@@ -6,6 +6,7 @@ import { ENGINES, MAX_RESULTS, SCREENSHOT, VIEWPORT, htmlText, isBlank, parseRes
 // Real /scrape responses (trimmed to selector, text, html, top and href), captured through Browser Run in November 2026.
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/search/${name}.json`, import.meta.url), "utf8"));
 const engine = (name) => ENGINES.find((e) => e.name === name);
+const onDuckDuckGo = (url) => /(^|\.)duckduckgo\.com$/.test(new URL(url).hostname);
 const respond = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 test("DuckDuckGo: ads and their snippets are dropped, the redirect links resolve to the real pages", () => {
@@ -19,7 +20,7 @@ test("DuckDuckGo: ads and their snippets are dropped, the redirect links resolve
 		url: "https://www.rei.com/c/running-shoes/f/scd-deals",
 		snippet: "Shop for Running Shoes on sale, discount and clearance at REI. Find a great deal on Running Shoes. 100% Satisfaction Guarantee",
 	});
-	assert.ok(out.every((r) => !r.url.includes("duckduckgo.com") && r.snippet), "no ads; every result has its snippet");
+	assert.ok(out.every((r) => !onDuckDuckGo(r.url) && r.snippet), "no ads; every result has its snippet");
 	const adSnippets = fx.result[1].results.filter((r) => r.attributes[0].value.includes("y.js")).map((r) => r.text.trim());
 	assert.ok(out.every((r) => !adSnippets.includes(r.snippet)));
 });
@@ -33,7 +34,7 @@ test("DuckDuckGo Lite: snippets without links are matched by position; ads and t
 		url: "https://www.geico.com/auto-insurance/",
 		snippet: "Get a GEICO car insurance quote in minutes. See how much you could save with discounts and bundling, and choose coverage that fits your budget.",
 	});
-	assert.ok(out.every((r) => !r.url.includes("duckduckgo.com")));
+	assert.ok(out.every((r) => !onDuckDuckGo(r.url)));
 	assert.ok(!out.some((r) => r.title === "Florida Car Insurance - Get an Auto Quote Today"), "the first link is an ad");
 });
 
