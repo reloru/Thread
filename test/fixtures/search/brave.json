@@ -1,0 +1,300 @@
+{
+ "success": true,
+ "result": [
+  {
+   "selector": "div.snippet[data-type=\"web\"] a.l1",
+   "results": [
+    {
+     "text": "Wikipedia\nen.wikipedia.org › wiki › Mount_Everest\nMount Everest - Wikipedia",
+     "html": "<div class=\"site-name-wrapper svelte-on1hvy\"><div class=\"favicon-wrapper svelte-on1hvy\"><!--[0--><div class=\"favicon-background-wrapper svelte-on1hvy\"><img class=\"favicon-background svelte-on1hvy\" src=\"https://imgs.search.brave.com/m6XxME4ek8DGIUcEPCqjRoDjf2e54EwL9pQzyzogLYk/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvNjQwNGZhZWY0/ZTQ1YWUzYzQ3MDUw/MmMzMGY3NTQ0ZjNj/NDUwMDk5ZTI3MWRk/NWYyNTM4N2UwOTE0/NTI3ZDQzNy9lbi53/aWtpcGVkaWEub3Jn/Lw\" alt=\"\" loading=\"lazy\" decoding=\"async\" aria-hidden=\"true\"></div><!--]--> <img src=\"https://imgs.search.brave.com/m6XxME4ek8DGIUcEPCqjRoDjf2e54EwL9pQzyzogLYk/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvNjQwNGZhZWY0/ZTQ1YWUzYzQ3MDUw/MmMzMGY3NTQ0ZjNj/NDUwMDk5ZTI3MWRk/NWYyNTM4N2UwOTE0/NTI3ZDQzNy9lbi53/aWtpcGVkaWEub3Jn/Lw\" alt=\"🌐\" class=\"favicon size-m svelte-w2a9kc\" loading=\"lazy\" onerror=\"this.__e=event\" onload=\"this.__e=event\"><!----> <!--[-1--><!--]--></div> <div class=\"site-name-content svelte-on1hvy\"><div class=\"desktop-small-semibold t-secondary text-ellipsis\">Wikipedia</div> <div class=\"url-wrapper svelte-on1hvy\"><cite class=\"snippet-url desktop-small-regular t-tertiary svelte-on1hvy\">en.wikipedia.org <span class=\"text-ellipsis\">› wiki  › Mount_Everest</span></cite> <!--[-1--><!--]--></div></div> <!--[-1--><!--]--></div><!----> <div class=\"title search-snippet-title line-clamp-2 svelte-14r20fy\" title=\"Mount Everest - Wikipedia\">Mount Everest - Wikipedia</div>",
+     "top": 1311,
+     "attributes": [
+      {
+       "name": "href",
+       "value": "https://en.wikipedia.org/wiki/Mount_Everest"
+      }
+     ]
+    },
+    {
+     "text": "Encyclopedia Britannica\nbritannica.com › geography & travel › physical geography of land › mountains & volcanoes\nMount Everest | Height, Map, Deaths, Facts, & Climbers | Britannica",
+     "html": "<div class=\"site-name-wrapper svelte-on1hvy\"><div class=\"favicon-wrapper svelte-on1hvy\"><!--[0--><div class=\"favicon-background-wrapper svelte-on1hvy\"><img class=\"favicon-background svelte-on1hvy\" src=\"https://imgs.search.brave.com/jMDHLEzOKBVbwQ7-d4wBSobNay75CY4fiZkxDsHYBkA/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvNzJmYzgxOWRk/Y2FhNWI2MzQzMjQ4/MWVhZDZhNGY3ZjY0/MDgxZTM3YWU5MzYz/NGU2MzM3Y2Y2YTYz/M2IyM2Y0NC93d3cu/YnJpdGFubmljYS5j/b20v\" alt=\"\" loading=\"lazy\" decoding=\"async\" aria-hidden=\"true\"></div><!--]--> <img src=\"https://imgs.search.brave.com/jMDHLEzOKBVbwQ7-d4wBSobNay75CY4fiZkxDsHYBkA/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvNzJmYzgxOWRk/Y2FhNWI2MzQzMjQ4/MWVhZDZhNGY3ZjY0/MDgxZTM3YWU5MzYz/NGU2MzM3Y2Y2YTYz/M2IyM2Y0NC93d3cu/YnJpdGFubmljYS5j/b20v\" alt=\"🌐\" class=\"favicon size-m svelte-w2a9kc\" loading=\"lazy\" onerror=\"this.__e=event\" onload=\"this.__e=event\"><!----> <!--[-1--><!--]--></div> <div class=\"site-name-content svelte-on1hvy\"><div class=\"desktop-small-semibold t-secondary text-ellipsis\">Encyclopedia Britannica</div> <div class=\"url-wrapper svelte-on1hvy\"><cite class=\"snippet-url desktop-small-regular t-tertiary svelte-on1hvy\">britannica.com <span class=\"text-ellipsis\">  › geography &amp; travel  › physical geography of land  › mountains &amp; volcanoes</span></cite> <!--[-1--><!--]--></div></div> <!--[-1--><!--]--></div><!----> <div class=\"title search-snippet-title line-clamp-2 svelte-14r20fy\" title=\"Mount Everest | Height, Map, Deaths, Facts, &amp; Climbers | Britannica\">Mount Everest | Height, Map, Deaths, Facts, &amp; Climbers | Britannica</div>",
+     "top": 1495,
+     "attributes": [
+      {
+       "name": "href",
+       "value": "https://www.britannica.com/place/Mount-Everest"
+      }
+     ]
+    },
+    {
+     "text": "Himalayan Wonders\nhimalayanwonders.com › content › peaks › mount-everest.html\nMount Everest | Himalayan Wonders",
+     "html": "<div class=\"site-name-wrapper svelte-on1hvy\"><div class=\"favicon-wrapper svelte-on1hvy\"><!--[0--><div class=\"favicon-background-wrapper svelte-on1hvy\"><img class=\"favicon-background svelte-on1hvy\" src=\"https://imgs.search.brave.com/2EU6LshqwuRD2VEsR5aJk7LccqjwbdTYwSiLlID4hZM/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvODcwMTQxN2Nj/ZTNiNTdjZGViZjk4/ZWFkMjZiNmQ2ZDY5/MzY4ZjU5MDJmOTI0/MzBmMjQ4ZWY4Nzc0/ZTI4YTRiNC93d3cu/aGltYWxheWFud29u/ZGVycy5jb20v\" alt=\"\" loading=\"lazy\" decoding=\"async\" aria-hidden=\"true\"></div><!--]--> <img src=\"https://imgs.search.brave.com/2EU6LshqwuRD2VEsR5aJk7LccqjwbdTYwSiLlID4hZM/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvODcwMTQxN2Nj/ZTNiNTdjZGViZjk4/ZWFkMjZiNmQ2ZDY5/MzY4ZjU5MDJmOTI0/MzBmMjQ4ZWY4Nzc0/ZTI4YTRiNC93d3cu/aGltYWxheWFud29u/ZGVycy5jb20v\" alt=\"🌐\" class=\"favicon size-m svelte-w2a9kc\" loading=\"lazy\" onerror=\"this.__e=event\" onload=\"this.__e=event\"><!----> <!--[-1--><!--]--></div> <div class=\"site-name-content svelte-on1hvy\"><div class=\"desktop-small-semibold t-secondary text-ellipsis\">Himalayan Wonders</div> <div class=\"url-wrapper svelte-on1hvy\"><cite class=\"snippet-url desktop-small-regular t-tertiary svelte-on1hvy\">himalayanwonders.com <span class=\"text-ellipsis\">› content  › peaks  › mount-everest.html</span></cite> <!--[-1--><!--]--></div></div> <!--[-1--><!--]--></div><!----> <div class=\"title search-snippet-title line-clamp-2 svelte-14r20fy\" title=\"Mount Everest | Himalayan Wonders\">Mount Everest | Himalayan Wonders</div>",
+     "top": 3547,
+     "attributes": [
+      {
+       "name": "href",
+       "value": "https://www.himalayanwonders.com/content/peaks/mount-everest.html?selocation=US"
+      }
+     ]
+    },
+    {
+     "text": "Reddit\nreddit.com › r/geography › mount everest isn’t actually the tallest mountain on earth\nr/geography on Reddit: Mount Everest isn’t actually the tallest mountain on Earth",
+     "html": "<div class=\"site-name-wrapper svelte-on1hvy\"><div class=\"favicon-wrapper svelte-on1hvy\"><!--[0--><div class=\"favicon-background-wrapper svelte-on1hvy\"><img class=\"favicon-background svelte-on1hvy\" src=\"https://imgs.search.brave.com/U-eHNCapRHVNWWCVPPMTIvOofZULh0_A_FQKe8xTE4I/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvN2ZiNTU0M2Nj/MTFhZjRiYWViZDlk/MjJiMjBjMzFjMDRk/Y2IzYWI0MGI0MjVk/OGY5NzQzOGQ5NzQ5/NWJhMWI0NC93d3cu/cmVkZGl0LmNvbS8\" alt=\"\" loading=\"lazy\" decoding=\"async\" aria-hidden=\"true\"></div><!--]--> <img src=\"https://imgs.search.brave.com/U-eHNCapRHVNWWCVPPMTIvOofZULh0_A_FQKe8xTE4I/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvN2ZiNTU0M2Nj/MTFhZjRiYWViZDlk/MjJiMjBjMzFjMDRk/Y2IzYWI0MGI0MjVk/OGY5NzQzOGQ5NzQ5/NWJhMWI0NC93d3cu/cmVkZGl0LmNvbS8\" alt=\"🌐\" class=\"favicon size-m svelte-w2a9kc\" loading=\"lazy\" onerror=\"this.__e=event\" onload=\"this.__e=event\"><!----> <!--[-1--><!--]--></div> <div class=\"site-name-content svelte-on1hvy\"><div class=\"desktop-small-semibold t-secondary text-ellipsis\">Reddit</div> <div class=\"url-wrapper svelte-on1hvy\"><cite class=\"snippet-url desktop-small-regular t-tertiary svelte-on1hvy\">reddit.com <span class=\"text-ellipsis\">  › r/geography  › mount everest isn’t actually the tallest mountain on earth</span></cite> <!--[-1--><!--]--></div></div> <!--[-1--><!--]--></div><!----> <div class=\"title search-snippet-title line-clamp-2 svelte-14r20fy\" title=\"r/geography on Reddit: Mount Everest isn’t actually the tallest mountain on Earth\">r/geography on Reddit: Mount Everest isn’t actually the tallest mountain on Earth</div>",
+     "top": 3923,
+     "attributes": [
+      {
+       "name": "href",
+       "value": "https://www.reddit.com/r/geography/comments/1rkus76/mount_everest_isnt_actually_the_tallest_mountain/"
+      }
+     ]
+    },
+    {
+     "text": "National Geographic Education\neducation.nationalgeographic.org › resource › mount-everest\nMount Everest",
+     "html": "<div class=\"site-name-wrapper svelte-on1hvy\"><div class=\"favicon-wrapper svelte-on1hvy\"><!--[0--><div class=\"favicon-background-wrapper svelte-on1hvy\"><img class=\"favicon-background svelte-on1hvy\" src=\"https://imgs.search.brave.com/1xKSXmuMAp_j0JEHqaDdxAt4l0kjMQuVMdgT-vdiXqQ/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvNjBmYzk5YmE3/M2VkYTRjNWMzNWNi/NTIwOTc3NmZlNTZj/ZTkxNzllZTE0Mzkw/ZmFhMjg2ZTExNDkw/ZGQzMjNlOS9lZHVj/YXRpb24ubmF0aW9u/YWxnZW9ncmFwaGlj/Lm9yZy8\" alt=\"\" loading=\"lazy\" decoding=\"async\" aria-hidden=\"true\"></div><!--]--> <img src=\"https://imgs.search.brave.com/1xKSXmuMAp_j0JEHqaDdxAt4l0kjMQuVMdgT-vdiXqQ/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvNjBmYzk5YmE3/M2VkYTRjNWMzNWNi/NTIwOTc3NmZlNTZj/ZTkxNzllZTE0Mzkw/ZmFhMjg2ZTExNDkw/ZGQzMjNlOS9lZHVj/YXRpb24ubmF0aW9u/YWxnZW9ncmFwaGlj/Lm9yZy8\" alt=\"🌐\" class=\"favicon size-m svelte-w2a9kc\" loading=\"lazy\" onerror=\"this.__e=event\" onload=\"this.__e=event\"><!----> <!--[-1--><!--]--></div> <div class=\"site-name-content svelte-on1hvy\"><div class=\"desktop-small-semibold t-secondary text-ellipsis\">National Geographic Education</div> <div class=\"url-wrapper svelte-on1hvy\"><cite class=\"snippet-url desktop-small-regular t-tertiary svelte-on1hvy\">education.nationalgeographic.org <span class=\"text-ellipsis\">› resource  › mount-everest</span></cite> <!--[-1--><!--]--></div></div> <!--[-1--><!--]--></div><!----> <div class=\"title search-snippet-title line-clamp-2 svelte-14r20fy\" title=\"Mount Everest\">Mount Everest</div>",
+     "top": 4462,
+     "attributes": [
+      {
+       "name": "href",
+       "value": "https://education.nationalgeographic.org/resource/mount-everest/"
+      }
+     ]
+    },
+    {
+     "text": "Landfire\nlandfire.gov › vegetation › evh\nExisting Vegetation Height | LANDFIRE",
+     "html": "<div class=\"site-name-wrapper svelte-on1hvy\"><div class=\"favicon-wrapper svelte-on1hvy\"><!--[0--><div class=\"favicon-background-wrapper svelte-on1hvy\"><img class=\"favicon-background svelte-on1hvy\" src=\"https://imgs.search.brave.com/vQLB_4tWJVPfXcjoeMXyE_mYjgLXjEBGnb4RkFw7V3A/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvMmE2M2Y5NjMy/YzE0MDRkZGM3YmM4/ZGFmN2ZiOGI2ZjJm/ZGQ0MmVjNTI4MjUz/MWU5NmYxMWFhNjNl/MTI3MDdhZi93d3cu/bGFuZGZpcmUuZ292/Lw\" alt=\"\" loading=\"lazy\" decoding=\"async\" aria-hidden=\"true\"></div><!--]--> <img src=\"https://imgs.search.brave.com/vQLB_4tWJVPfXcjoeMXyE_mYjgLXjEBGnb4RkFw7V3A/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvMmE2M2Y5NjMy/YzE0MDRkZGM3YmM4/ZGFmN2ZiOGI2ZjJm/ZGQ0MmVjNTI4MjUz/MWU5NmYxMWFhNjNl/MTI3MDdhZi93d3cu/bGFuZGZpcmUuZ292/Lw\" alt=\"🌐\" class=\"favicon size-m svelte-w2a9kc\" loading=\"lazy\" onerror=\"this.__e=event\" onload=\"this.__e=event\"><!----> <!--[-1--><!--]--></div> <div class=\"site-name-content svelte-on1hvy\"><div class=\"desktop-small-semibold t-secondary text-ellipsis\">Landfire</div> <div class=\"url-wrapper svelte-on1hvy\"><cite class=\"snippet-url desktop-small-regular t-tertiary svelte-on1hvy\">landfire.gov <span class=\"text-ellipsis\">› vegetation  › evh</span></cite> <!--[-1--><!--]--></div></div> <!--[-1--><!--]--></div><!----> <div class=\"title search-snippet-title line-clamp-2 svelte-14r20fy\" title=\"Existing Vegetation Height | LANDFIRE\">Existing Vegetation Height | LANDFIRE</div>",
+     "top": 4893,
+     "attributes": [
+      {
+       "name": "href",
+       "value": "https://www.landfire.gov/vegetation/evh"
+      }
+     ]
+    },
+    {
+     "text": "Peak Climbing in Nepal\npeakclimbingnepal.com › home › blog › nepal travel guides › how tall is mount everest?\nHow Tall is Mount Everest? The Exact Height Revealed",
+     "html": "<div class=\"site-name-wrapper svelte-on1hvy\"><div class=\"favicon-wrapper svelte-on1hvy\"><!--[0--><div class=\"favicon-background-wrapper svelte-on1hvy\"><img class=\"favicon-background svelte-on1hvy\" src=\"https://imgs.search.brave.com/oisdIzCNcLCiX30bBrhAcoQmG4-S-234AQd63oF6S20/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvYTZjODI3ZmVi/MmRlNTFhMWRhOWQ5/ZjMwNTFmYmE0Njhh/ODY2ZWY1MmY3Yjlh/NjNkNjVkZjk5YzVm/NjRmMDVlNC9wZWFr/Y2xpbWJpbmduZXBh/bC5jb20v\" alt=\"\" loading=\"lazy\" decoding=\"async\" aria-hidden=\"true\"></div><!--]--> <img src=\"https://imgs.search.brave.com/oisdIzCNcLCiX30bBrhAcoQmG4-S-234AQd63oF6S20/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvYTZjODI3ZmVi/MmRlNTFhMWRhOWQ5/ZjMwNTFmYmE0Njhh/ODY2ZWY1MmY3Yjlh/NjNkNjVkZjk5YzVm/NjRmMDVlNC9wZWFr/Y2xpbWJpbmduZXBh/bC5jb20v\" alt=\"🌐\" class=\"favicon size-m svelte-w2a9kc\" loading=\"lazy\" onerror=\"this.__e=event\" onload=\"this.__e=event\"><!----> <!--[-1--><!--]--></div> <div class=\"site-name-content svelte-on1hvy\"><div class=\"desktop-small-semibold t-secondary text-ellipsis\">Peak Climbing in Nepal</div> <div class=\"url-wrapper svelte-on1hvy\"><cite class=\"snippet-url desktop-small-regular t-tertiary svelte-on1hvy\">peakclimbingnepal.com <span class=\"text-ellipsis\">  › home  › blog  › nepal travel  guides  › how tall is mount everest?</span></cite> <!--[-1--><!--]--></div></div> <!--[-1--><!--]--></div><!----> <div class=\"title search-snippet-title line-clamp-2 svelte-14r20fy\" title=\"How Tall is Mount Everest? The Exact Height Revealed\">How Tall is Mount Everest? The Exact Height Revealed</div>",
+     "top": 5031,
+     "attributes": [
+      {
+       "name": "href",
+       "value": "https://peakclimbingnepal.com/blog/how-tall-is-mount-everest"
+      }
+     ]
+    },
+    {
+     "text": "Zaratanzaniaadventures\nzaratanzaniaadventures.com › how-tall-is-everest\nHow Tall Is Mount Everest | Height of Everest Base Camp",
+     "html": "<div class=\"site-name-wrapper svelte-on1hvy\"><div class=\"favicon-wrapper svelte-on1hvy\"><!--[0--><div class=\"favicon-background-wrapper svelte-on1hvy\"><img class=\"favicon-background svelte-on1hvy\" src=\"https://imgs.search.brave.com/RfEgOq2WoaeBj55NrCg1kDDPFua5d7_3K9d-yoCOjTs/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvNGRhYTNjZjM4/NTY3OWYxZGY1NDE1/Nzk1ZTc5NGFmOWM4/ZTc1ZDc1NDdjMjky/Zjc2NTI3NGMyMTBl/ZmZlMDI1NC96YXJh/dGFuemFuaWFhZHZl/bnR1cmVzLmNvbS8\" alt=\"\" loading=\"lazy\" decoding=\"async\" aria-hidden=\"true\"></div><!--]--> <img src=\"https://imgs.search.brave.com/RfEgOq2WoaeBj55NrCg1kDDPFua5d7_3K9d-yoCOjTs/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvNGRhYTNjZjM4/NTY3OWYxZGY1NDE1/Nzk1ZTc5NGFmOWM4/ZTc1ZDc1NDdjMjky/Zjc2NTI3NGMyMTBl/ZmZlMDI1NC96YXJh/dGFuemFuaWFhZHZl/bnR1cmVzLmNvbS8\" alt=\"🌐\" class=\"favicon size-m svelte-w2a9kc\" loading=\"lazy\" onerror=\"this.__e=event\" onload=\"this.__e=event\"><!----> <!--[-1--><!--]--></div> <div class=\"site-name-content svelte-on1hvy\"><div class=\"desktop-small-semibold t-secondary text-ellipsis\">Zaratanzaniaadventures</div> <div class=\"url-wrapper svelte-on1hvy\"><cite class=\"snippet-url desktop-small-regular t-tertiary svelte-on1hvy\">zaratanzaniaadventures.com <span class=\"text-ellipsis\">› how-tall-is-everest</span></cite> <!--[-1--><!--]--></div></div> <!--[-1--><!--]--></div><!----> <div class=\"title search-snippet-title line-clamp-2 svelte-14r20fy\" title=\"How Tall Is Mount Everest | Height of Everest Base Camp\">How Tall Is Mount Everest | Height of Everest Base Camp</div>",
+     "top": 5213,
+     "attributes": [
+      {
+       "name": "href",
+       "value": "https://zaratanzaniaadventures.com/how-tall-is-everest/"
+      }
+     ]
+    },
+    {
+     "text": "Instagram\ninstagram.com › reel › DaDC-IDyd8G\nMount Everest! For millions of years, it has stood as the crown ...",
+     "html": "<div class=\"site-name-wrapper svelte-on1hvy\"><div class=\"favicon-wrapper svelte-on1hvy\"><!--[0--><div class=\"favicon-background-wrapper svelte-on1hvy\"><img class=\"favicon-background svelte-on1hvy\" src=\"https://imgs.search.brave.com/kgdtgqUZQdNYzMKhbVXC5vthlFLPMJ0IOJAdFjEIRuk/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvN2RiYmJiZDA4/NTBkNWQ0ZmQ3NDE5/OGUxOGI4NzE5ZDI0/Zjk0M2ExMDkzZmJm/ODA0MmJiMzkwZjMy/ZDM4YWVkOS93d3cu/aW5zdGFncmFtLmNv/bS8\" alt=\"\" loading=\"lazy\" decoding=\"async\" aria-hidden=\"true\"></div><!--]--> <img src=\"https://imgs.search.brave.com/kgdtgqUZQdNYzMKhbVXC5vthlFLPMJ0IOJAdFjEIRuk/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvN2RiYmJiZDA4/NTBkNWQ0ZmQ3NDE5/OGUxOGI4NzE5ZDI0/Zjk0M2ExMDkzZmJm/ODA0MmJiMzkwZjMy/ZDM4YWVkOS93d3cu/aW5zdGFncmFtLmNv/bS8\" alt=\"🌐\" class=\"favicon size-m svelte-w2a9kc\" loading=\"lazy\" onerror=\"this.__e=event\" onload=\"this.__e=event\"><!----> <!--[-1--><!--]--></div> <div class=\"site-name-content svelte-on1hvy\"><div class=\"desktop-small-semibold t-secondary text-ellipsis\">Instagram</div> <div class=\"url-wrapper svelte-on1hvy\"><cite class=\"snippet-url desktop-small-regular t-tertiary svelte-on1hvy\">instagram.com <span class=\"text-ellipsis\">› reel  › DaDC-IDyd8G</span></cite> <!--[-1--><!--]--></div></div> <!--[-1--><!--]--></div><!----> <div class=\"title search-snippet-title line-clamp-2 svelte-14r20fy\" title=\"Mount Everest! For millions of years, it has stood as the crown ...\">Mount Everest! For millions of years, it has stood as the crown ...</div>",
+     "top": 5611,
+     "attributes": [
+      {
+       "name": "href",
+       "value": "https://www.instagram.com/reel/DaDC-IDyd8G/?hl=en"
+      }
+     ]
+    },
+    {
+     "text": "IFLScience\niflscience.com › in-1954-surveyors-found-mount-everest-to-be-exactly-29000-feet-they-added-2-extra-feet-so-people-would-believe-them-83629\nMount Everest's Height Keeps Changing. The Last Measurement Found It Grew By Nearly A Meter | IFLScience",
+     "html": "<div class=\"site-name-wrapper svelte-on1hvy\"><div class=\"favicon-wrapper svelte-on1hvy\"><!--[0--><div class=\"favicon-background-wrapper svelte-on1hvy\"><img class=\"favicon-background svelte-on1hvy\" src=\"https://imgs.search.brave.com/x7hfvp5CQaeh50Ptd0l7X8atbOrEvXs9t6qa8PXnnrE/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvYWYzZjc3ZjQ0/MDQwYWEzY2M5MmM1/ZThhNmVjOWUxZDAw/Yjk5YjM3MWJhZjhh/MzZhYTc2MzI0MmY2/MWU3NmU3ZS93d3cu/aWZsc2NpZW5jZS5j/b20v\" alt=\"\" loading=\"lazy\" decoding=\"async\" aria-hidden=\"true\"></div><!--]--> <img src=\"https://imgs.search.brave.com/x7hfvp5CQaeh50Ptd0l7X8atbOrEvXs9t6qa8PXnnrE/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvYWYzZjc3ZjQ0/MDQwYWEzY2M5MmM1/ZThhNmVjOWUxZDAw/Yjk5YjM3MWJhZjhh/MzZhYTc2MzI0MmY2/MWU3NmU3ZS93d3cu/aWZsc2NpZW5jZS5j/b20v\" alt=\"🌐\" class=\"favicon size-m svelte-w2a9kc\" loading=\"lazy\" onerror=\"this.__e=event\" onload=\"this.__e=event\"><!----> <!--[-1--><!--]--></div> <div class=\"site-name-content svelte-on1hvy\"><div class=\"desktop-small-semibold t-secondary text-ellipsis\">IFLScience</div> <div class=\"url-wrapper svelte-on1hvy\"><cite class=\"snippet-url desktop-small-regular t-tertiary svelte-on1hvy\">iflscience.com <span class=\"text-ellipsis\">› in-1954-surveyors-found-mount-everest-to-be-exactly-29000-feet-they-added-2-extra-feet-so-people-would-believe-them-83629</span></cite> <!--[-1--><!--]--></div></div> <!--[-1--><!--]--></div><!----> <div class=\"title search-snippet-title line-clamp-2 svelte-14r20fy\" title=\"Mount Everest's Height Keeps Changing. The Last Measurement Found It Grew By Nearly A Meter | IFLScience\">Mount Everest's Height Keeps Changing. The Last Measurement Found It Grew By Nearly A Meter | IFLScience</div>",
+     "top": 5749,
+     "attributes": [
+      {
+       "name": "href",
+       "value": "https://www.iflscience.com/in-1954-surveyors-found-mount-everest-to-be-exactly-29000-feet-they-added-2-extra-feet-so-people-would-believe-them-83629"
+      }
+     ]
+    },
+    {
+     "text": "Reddit\nreddit.com › r/geography › what is considered the \"real\" elevation of mount everest??\nr/geography on Reddit: What is considered the \"Real\" elevation of Mount Everest??",
+     "html": "<div class=\"site-name-wrapper svelte-on1hvy\"><div class=\"favicon-wrapper svelte-on1hvy\"><!--[0--><div class=\"favicon-background-wrapper svelte-on1hvy\"><img class=\"favicon-background svelte-on1hvy\" src=\"https://imgs.search.brave.com/U-eHNCapRHVNWWCVPPMTIvOofZULh0_A_FQKe8xTE4I/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvN2ZiNTU0M2Nj/MTFhZjRiYWViZDlk/MjJiMjBjMzFjMDRk/Y2IzYWI0MGI0MjVk/OGY5NzQzOGQ5NzQ5/NWJhMWI0NC93d3cu/cmVkZGl0LmNvbS8\" alt=\"\" loading=\"lazy\" decoding=\"async\" aria-hidden=\"true\"></div><!--]--> <img src=\"https://imgs.search.brave.com/U-eHNCapRHVNWWCVPPMTIvOofZULh0_A_FQKe8xTE4I/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvN2ZiNTU0M2Nj/MTFhZjRiYWViZDlk/MjJiMjBjMzFjMDRk/Y2IzYWI0MGI0MjVk/OGY5NzQzOGQ5NzQ5/NWJhMWI0NC93d3cu/cmVkZGl0LmNvbS8\" alt=\"🌐\" class=\"favicon size-m svelte-w2a9kc\" loading=\"lazy\" onerror=\"this.__e=event\" onload=\"this.__e=event\"><!----> <!--[-1--><!--]--></div> <div class=\"site-name-content svelte-on1hvy\"><div class=\"desktop-small-semibold t-secondary text-ellipsis\">Reddit</div> <div class=\"url-wrapper svelte-on1hvy\"><cite class=\"snippet-url desktop-small-regular t-tertiary svelte-on1hvy\">reddit.com <span class=\"text-ellipsis\">  › r/geography  › what is considered the \"real\" elevation of mount everest??</span></cite> <!--[-1--><!--]--></div></div> <!--[-1--><!--]--></div><!----> <div class=\"title search-snippet-title line-clamp-2 svelte-14r20fy\" title=\"r/geography on Reddit: What is considered the &quot;Real&quot; elevation of Mount Everest??\">r/geography on Reddit: What is considered the \"Real\" elevation of Mount Everest??</div>",
+     "top": 6125,
+     "attributes": [
+      {
+       "name": "href",
+       "value": "https://www.reddit.com/r/geography/comments/p8umc4/what_is_considered_the_real_elevation_of_mount/"
+      }
+     ]
+    },
+    {
+     "text": "Josh W. Comeau\njoshwcomeau.com › css › height-enigma\nThe Height Enigma • Josh W. Comeau",
+     "html": "<div class=\"site-name-wrapper svelte-on1hvy\"><div class=\"favicon-wrapper svelte-on1hvy\"><!--[0--><div class=\"favicon-background-wrapper svelte-on1hvy\"><img class=\"favicon-background svelte-on1hvy\" src=\"https://imgs.search.brave.com/sccNGmxu2PNMgxGnINcpVEjTQGoWdPvLnj-NVDhNMz0/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvNGUxOGFhNGUw/OGUyNTFhOWZlZmMw/NzdlMTJmNjEzMDJl/ZDA5MjgxMTc2MGMw/NjEyOTExYzI5NTEy/NDkzNTViOC93d3cu/am9zaHdjb21lYXUu/Y29tLw\" alt=\"\" loading=\"lazy\" decoding=\"async\" aria-hidden=\"true\"></div><!--]--> <img src=\"https://imgs.search.brave.com/sccNGmxu2PNMgxGnINcpVEjTQGoWdPvLnj-NVDhNMz0/rs:fit:32:32:1:0/g:ce/aHR0cDovL2Zhdmlj/b25zLnNlYXJjaC5i/cmF2ZS5jb20vaWNv/bnMvNGUxOGFhNGUw/OGUyNTFhOWZlZmMw/NzdlMTJmNjEzMDJl/ZDA5MjgxMTc2MGMw/NjEyOTExYzI5NTEy/NDkzNTViOC93d3cu/am9zaHdjb21lYXUu/Y29tLw\" alt=\"🌐\" class=\"favicon size-m svelte-w2a9kc\" loading=\"lazy\" onerror=\"this.__e=event\" onload=\"this.__e=event\"><!----> <!--[-1--><!--]--></div> <div class=\"site-name-content svelte-on1hvy\"><div class=\"desktop-small-semibold t-secondary text-ellipsis\">Josh W. Comeau</div> <div class=\"url-wrapper svelte-on1hvy\"><cite class=\"snippet-url desktop-small-regular t-tertiary svelte-on1hvy\">joshwcomeau.com <span class=\"text-ellipsis\">› css  › height-enigma</span></cite> <!--[-1--><!--]--></div></div> <!--[-1--><!--]--></div><!----> <div class=\"title search-snippet-title line-clamp-2 svelte-14r20fy\" title=\"The Height Enigma • Josh W. Comeau\">The Height Enigma • Josh W. Comeau</div>",
+     "top": 6722,
+     "attributes": [
+      {
+       "name": "href",
+       "value": "https://www.joshwcomeau.com/css/height-enigma/"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "selector": "div.snippet[data-type=\"web\"] .search-snippet-title",
+   "results": [
+    {
+     "text": "Mount Everest - Wikipedia",
+     "html": "Mount Everest - Wikipedia",
+     "top": 1401,
+     "attributes": []
+    },
+    {
+     "text": "Mount Everest | Height, Map, Deaths, Facts, & Climbers | Britannica",
+     "html": "Mount Everest | Height, Map, Deaths, Facts, &amp; Climbers | Britannica",
+     "top": 1585,
+     "attributes": []
+    },
+    {
+     "text": "Mount Everest | Himalayan Wonders",
+     "html": "Mount Everest | Himalayan Wonders",
+     "top": 3637,
+     "attributes": []
+    },
+    {
+     "text": "r/geography on Reddit: Mount Everest isn’t actually the tallest mountain on Earth",
+     "html": "r/geography on Reddit: Mount Everest isn’t actually the tallest mountain on Earth",
+     "top": 4013,
+     "attributes": []
+    },
+    {
+     "text": "Mount Everest",
+     "html": "Mount Everest",
+     "top": 4552,
+     "attributes": []
+    },
+    {
+     "text": "Existing Vegetation Height | LANDFIRE",
+     "html": "Existing Vegetation Height | LANDFIRE",
+     "top": 4983,
+     "attributes": []
+    },
+    {
+     "text": "How Tall is Mount Everest? The Exact Height Revealed",
+     "html": "How Tall is Mount Everest? The Exact Height Revealed",
+     "top": 5121,
+     "attributes": []
+    },
+    {
+     "text": "How Tall Is Mount Everest | Height of Everest Base Camp",
+     "html": "How Tall Is Mount Everest | Height of Everest Base Camp",
+     "top": 5303,
+     "attributes": []
+    },
+    {
+     "text": "Mount Everest! For millions of years, it has stood as the crown ...",
+     "html": "Mount Everest! For millions of years, it has stood as the crown ...",
+     "top": 5701,
+     "attributes": []
+    },
+    {
+     "text": "Mount Everest's Height Keeps Changing. The Last Measurement Found It Grew By Nearly A Meter | IFLScience",
+     "html": "Mount Everest's Height Keeps Changing. The Last Measurement Found It Grew By Nearly A Meter | IFLScience",
+     "top": 5839,
+     "attributes": []
+    },
+    {
+     "text": "r/geography on Reddit: What is considered the \"Real\" elevation of Mount Everest??",
+     "html": "r/geography on Reddit: What is considered the \"Real\" elevation of Mount Everest??",
+     "top": 6215,
+     "attributes": []
+    },
+    {
+     "text": "The Height Enigma • Josh W. Comeau",
+     "html": "The Height Enigma • Josh W. Comeau",
+     "top": 6812,
+     "attributes": []
+    }
+   ]
+  },
+  {
+   "selector": "div.snippet[data-type=\"web\"] .generic-snippet .content",
+   "results": [
+    {
+     "text": "2 days ago - Mount Everest (known in Nepali as Sagarmāthā, in Sherpa as Chamolangma, and in Tibetan as Jomolangma/Čhomolangma) is the highest mountain on Earth above sea level. It lies in the Mahalangur Himal sub-range of the Himalayas and marks part of the China–Nepal border at its summit. Its height was ...",
+     "html": "<!--[0--><span class=\"t-secondary\">2 days ago -</span><!--]--> <!----><strong>Mount</strong> <strong>Everest</strong> (known in Nepali as Sagarmāthā, in Sherpa as Chamolangma, and in Tibetan as Jomolangma/Čhomolangma) is the highest mountain on Earth above sea level. It lies in the Mahalangur Himal sub-range of the Himalayas and marks part of the China–Nepal border at its summit. Its <strong>height</strong> was&nbsp;...<!---->",
+     "top": 1427,
+     "attributes": []
+    },
+    {
+     "text": "2 days ago - Mount Everest, mountain on the crest of the Great Himalayas of southern Asia that lies on the border between Nepal and the Tibet Autonomous Region of China. Reaching an elevation of 29,032 feet (8,849 meters), Mount Everest is the highest mountain ...",
+     "html": "<!--[0--><span class=\"t-secondary\">2 days ago -</span><!--]--> <!---->Mount Everest, mountain on the crest of the Great Himalayas of southern Asia that lies on the border between Nepal and the Tibet Autonomous Region of China. Reaching an elevation of <strong>29,032 feet (8,849 meters),</strong> Mount Everest is the highest mountain&nbsp;...<!---->",
+     "top": 1611,
+     "attributes": []
+    },
+    {
+     "text": "Its peak is 8,848 metres (29,029 ft) above sea level and is the 5th furthest point from the center of the Earth. The international border between China and Nepal runs across the precise summit point.",
+     "html": "<!--[-1--><!--]--> <!---->Its peak is <strong>8,848 metres (29,029 ft) above sea level</strong> and is the 5th furthest point from the center of the Earth. The international border between China and Nepal runs across the precise summit point.<!---->",
+     "top": 3663,
+     "attributes": []
+    },
+    {
+     "text": "September 15, 2026 - At 8,849 meters (29,032 feet), it is considered the tallest point on Earth. In the nineteenth century, the mountain was named after George Everest, a former Surveyor General of India.",
+     "html": "<!--[0--><span class=\"t-secondary\">September 15, 2026 -</span><!--]--> <!---->At <strong>8,849 meters (29,032 feet),</strong> it is considered the tallest point on Earth. In the nineteenth century, the mountain was named after George Everest, a former Surveyor General of India.<!---->",
+     "top": 4578,
+     "attributes": []
+    },
+    {
+     "text": "Decision tree models using field reference data, lidar, Landsat, and ancillary data are developed separately for each lifeform. Decision tree relationships are used to generate lifeform specific height class layers, which are merged into a single composite EVH layer.",
+     "html": "<!--[-1--><!--]--> <!---->Decision tree models using field reference data, lidar, Landsat, and ancillary data are developed separately for each lifeform. Decision tree relationships are used to generate lifeform specific height class layers, which are merged into a single composite EVH layer.<!---->",
+     "top": 5009,
+     "attributes": []
+    },
+    {
+     "text": "July 15, 2026 - Six years later, Chinese specialists used GPS and ice-penetrating radar and measured height by scaling mountains. The height of Everest was then concluded as 29,017.12 ft through this survey.",
+     "html": "<!--[0--><span class=\"t-secondary\">July 15, 2026 -</span><!--]--> <!---->Six years later, Chinese specialists used GPS and ice-penetrating radar and measured height by scaling mountains. The height of Everest was then concluded as <strong>29,017.12 ft</strong> through this survey.<!---->",
+     "top": 5147,
+     "attributes": []
+    },
+    {
+     "text": "July 24, 2025 - However, the most recent and accurate value is 8,848.9 meters. Before 2020, scientists had used various instruments, such as GPS technology, satellite data, and radar, to measure the height of Everest.",
+     "html": "<!--[0--><span class=\"t-secondary\">July 24, 2025 -</span><!--]--> <!---->However, the most recent and accurate value is <strong>8,848.9 meters</strong>. Before 2020, scientists had used various instruments, such as GPS technology, satellite data, and radar, to measure the height of Everest.<!---->",
+     "top": 5329,
+     "attributes": []
+    },
+    {
+     "text": "9M seguidores, 30 siguiendo, 5 publicaciones - @reel en Instagram: \"\"",
+     "html": "<!--[-1--><!--]--> <!----><strong>9M</strong> seguidores, 30 siguiendo, 5 publicaciones - @reel en Instagram: \"\"<!---->",
+     "top": 5727,
+     "attributes": []
+    },
+    {
+     "text": "May 27, 2026 - \"This seemed too much like a ... Everest for over a century, until the Survey of India in 1954 found it to be 8,848 meters (29,028 feet)....",
+     "html": "<!--[0--><span class=\"t-secondary\">May 27, 2026 -</span><!--]--> <!---->\"This seemed too much like a ... Everest for over a century, until the Survey of India in 1954 found it to be <strong>8,848 meters (29,028 feet).</strong>...<!---->",
+     "top": 5865,
+     "attributes": []
+    },
+    {
+     "text": "One of the most perplexing and befuddling things in CSS for me, for many years, was the behaviour of percentage-based heights. Sometimes, seemingly at random, setting height: 100% would have no effect at all. When I finally figured out what was going on, it was like a puzzle piece snapping into place; everything made so much more sense!",
+     "html": "<!--[-1--><!--]--> <!---->One of the most perplexing and befuddling things in CSS for me, for many years, was the behaviour of percentage-based heights. Sometimes, seemingly at random, setting height: 100% would have no effect at all. When I finally figured out what was going on, it was like a puzzle piece snapping into place; everything made so much more sense!<!---->",
+     "top": 6838,
+     "attributes": []
+    },
+    {
+     "text": "May 3, 2013 - Mount Everest is the tallest mountain on Earth with a height of 8,848 meters (29,029 ft) above sea level.",
+     "html": "<!--[0--><span class=\"t-secondary\">May 3, 2013 -</span><!--]--> <!---->Mount Everest is the tallest mountain on Earth with a height of <strong>8,848 meters (29,029 ft) above sea level</strong>.<!---->",
+     "top": 7262,
+     "attributes": []
+    },
+    {
+     "text": "ATM - High Altitude Balloons Airliners - 1 2 ATM - Cory Doctrow Shuttle Columbia Lost Everest Helicoptors Man: Woo Python! - 800 m - - 1 km - [[Height progressivly gets smaller and smaller]] Burj Dubai (~800 m) Eiffel Tower (325 m) Kites Great ...",
+     "html": "<!--[-1--><!--]--> <!---->ATM - High Altitude Balloons Airliners - 1 2 ATM - Cory Doctrow Shuttle Columbia Lost Everest Helicoptors Man: Woo Python! - <strong>800 m</strong> - - 1 km - [[Height progressivly gets smaller and smaller]] Burj Dubai (~<strong>800 m</strong>) Eiffel Tower (325 m) Kites Great&nbsp;...<!---->",
+     "top": 7638,
+     "attributes": []
+    }
+   ]
+  }
+ ],
+ "meta": {
+  "status": 200,
+  "title": ""
+ }
+}

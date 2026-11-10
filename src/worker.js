@@ -1,6 +1,6 @@
 import { DEFAULT_MAX_TOKENS, DEFAULT_MODEL, MODELS } from "./models.js";
 import { ParamError, isPlainObject, sanitizeParams } from "../public/params.js";
-import { sanitizeTools } from "./agent.js";
+import { longDate, sanitizeTools, toolNote } from "./agent.js";
 import { generate } from "./generate.js";
 import { HttpError, NO_STORE, json, readBytes, requireMethod } from "./http.js";
 import { VOICE_LANGS, speak, transcribe, turn, voiceConfig, voiceInstruction } from "./voice.js";
@@ -142,17 +142,26 @@ async function chat(request, env) {
 	const voice = sanitizeVoice(body.voice);
 	const params = sanitizeParams(body.params, model);
 	if (voice) applyVoiceParams(params, model);
-	// Developer instructions are their own message on models that follow one, else the end of the system message.
-	const developer = sanitizeInstructions(body.developer, "developer");
-	const system = [sanitizeInstructions(body.instructions), !model.developer && developer, voice && voiceInstruction(voice)].filter(Boolean).join("\n\n");
-	if (model.developer && developer) messages.unshift({ role: "developer", content: developer });
-	if (system) messages.unshift({ role: "system", content: system });
 	let tools;
 	try {
 		tools = sanitizeTools(body.tools);
 	} catch (err) {
 		throw new HttpError(400, err.message);
 	}
+	const today = sanitizeToday(body.today);
+	// Developer instructions are their own message on models that follow one, else the end of the system message.
+	// With tools on, the system message ends with what they can do and today's date.
+	const developer = sanitizeInstructions(body.developer, "developer");
+	const system = [
+		sanitizeInstructions(body.instructions),
+		!model.developer && developer,
+		voice && voiceInstruction(voice),
+		toolNote(tools, { vision: model.vision, date: today }),
+	]
+		.filter(Boolean)
+		.join("\n\n");
+	if (model.developer && developer) messages.unshift({ role: "developer", content: developer });
+	if (system) messages.unshift({ role: "system", content: system });
 	if (tools.length && (params.tools || params.functions)) {
 		throw new HttpError(400, "Turn off the Code and Web tools to send your own tools in Advanced JSON.");
 	}
@@ -273,6 +282,13 @@ function applyVoiceParams(params, model) {
 	for (const [key, value] of Object.entries(model.voiceParams || {})) {
 		params[key] = isPlainObject(value) && isPlainObject(params[key]) ? { ...params[key], ...value } : value;
 	}
+}
+
+// The device's local date (YYYY-MM-DD), for the tool note. Apps from earlier releases don't send it; the UTC date is used.
+export function sanitizeToday(input) {
+	if (input === undefined || input === null) return undefined;
+	if (!longDate(input)) throw new HttpError(400, "today must be a date like 2026-11-10.");
+	return input;
 }
 
 export function sanitizeInstructions(input, field = "instructions") {

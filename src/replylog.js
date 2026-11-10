@@ -138,10 +138,11 @@ export class ReplyLog {
 
 	async finish(status) {
 		this.running = false;
-		this.meta = { ...this.meta, status, ended: this.now() };
+		const ended = this.now();
+		this.meta = { ...this.meta, status, ended };
 		await this.flush();
 		await this.store.setMeta(this.meta);
-		await this.store.setAlarm(this.now() + RETAIN_MS);
+		await this.store.setAlarm(ended + RETAIN_MS);
 		for (const listener of this.listeners) listener(null);
 	}
 
