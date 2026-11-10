@@ -347,24 +347,25 @@ test("voice mode turns thinking off, keeps other settings and adds the spoken-st
 		worker.fetch(req("/api/chat", { method: "POST", body: { model, messages: [{ role: "user", content: "hi" }], ...extra } }), env);
 
 	const qwen = "@cf/qwen/qwen3.8-27b";
-	await post("@cf/nvidia/nemotron-3-120b-a12b", {
+	await post(qwen, {
 		voice: { lang: "en" },
 		instructions: "Be brief.",
-		params: { temperature: 0.3, chat_template_kwargs: { enable_thinking: true, low_effort: true } },
+		params: { temperature: 0.3, chat_template_kwargs: { enable_thinking: true } },
 	});
-	assert.deepEqual(calls[0].input.chat_template_kwargs, { enable_thinking: false, low_effort: true });
+	assert.deepEqual(calls[0].input.chat_template_kwargs, { enable_thinking: false });
 	assert.equal(calls[0].input.temperature, 0.3);
 	const system = calls[0].input.messages[0];
 	assert.equal(system.role, "system");
 	assert.match(system.content, /^Be brief\.\n\nYou are talking with the user by voice/);
 	assert.match(system.content, /Reply in English\.$/);
 
-	await post("@cf/moonshotai/kimi-k2.6", { voice: { lang: "es" }, params: { reasoning_effort: "high" } });
-	assert.equal(calls[1].input.reasoning_effort, "none");
+	await post("@cf/deepseek-ai/deepseek-v4.1-flash-1017", { voice: { lang: "es" }, params: { reasoning_effort: "high" } });
+	assert.equal(calls[1].input.reasoning_effort, "high");
+	assert.deepEqual(calls[1].input.chat_template_kwargs, { enable_thinking: false });
 	assert.match(calls[1].input.messages[0].content, /^You are talking with the user by voice/);
 	assert.match(calls[1].input.messages[0].content, /Reply in Spanish\.$/);
 
-	await post("@cf/zai-org/glm-5.3-flash", { voice: { lang: "en" }, params: { reasoning_effort: "high" } });
+	await post("@cf/zai-org/glm-5.3", { voice: { lang: "en" }, params: { reasoning_effort: "high" } });
 	assert.equal(calls[2].input.reasoning_effort, "high", "models that cannot disable reasoning keep the user's setting");
 
 	await post(qwen, { params: { chat_template_kwargs: { enable_thinking: true } } });
@@ -391,33 +392,12 @@ test("images reach the new vision models and become a note for Granite", async (
 		model,
 		messages: [{ role: "user", content: [{ type: "text", text: "what?" }, { type: "image_url", image_url: { url: IMG } }] }],
 	});
-	for (const model of ["@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/moonshotai/kimi-k2.7-code", "@cf/ibm-granite/granite-4.0-h-micro"]) {
+	for (const model of ["@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/deepseek-ai/deepseek-v4.1-flash-1017", "@cf/ibm-granite/granite-4.0-h-micro"]) {
 		await worker.fetch(req("/api/chat", { method: "POST", body: body(model) }), env);
 	}
 	assert.deepEqual(calls[0].input.messages[0].content[1], { type: "image_url", image_url: { url: IMG } });
 	assert.deepEqual(calls[1].input.messages[0].content[1], { type: "image_url", image_url: { url: IMG } });
 	assert.match(calls[2].input.messages[0].content, /^what\?\n\n\[An image was attached/);
-});
-
-test("Nemotron with Thinking off: the reply the service streams as reasoning arrives as content", async () => {
-	const stream = () =>
-		new ReadableStream({
-			start(c) {
-				c.enqueue(new TextEncoder().encode('data: {"choices":[{"index":0,"delta":{"reasoning":"Hello"}}]}\n\ndata: [DONE]\n\n'));
-				c.close();
-			},
-		});
-	const { env } = makeEnv({ AI: { run: async () => stream() } });
-	const post = async (model, extra) =>
-		(await worker.fetch(req("/api/chat", { method: "POST", body: { model, messages: [{ role: "user", content: "hi" }], ...extra } }), env)).text();
-	const nemotron = "@cf/nvidia/nemotron-3-120b-a12b";
-	const off = { params: { chat_template_kwargs: { enable_thinking: false } } };
-	assert.match(await post(nemotron, off), /"delta":\{"content":"Hello"\}/);
-	assert.match(await post(nemotron, { voice: { lang: "en" } }), /"delta":\{"content":"Hello"\}/);
-	assert.match(await post(nemotron, { ...off, tools: ["web"] }), /"delta":\{"content":"Hello"\}/);
-	assert.match(await post(nemotron, { params: { chat_template_kwargs: { enable_thinking: true } } }), /"reasoning":"Hello"/);
-	assert.match(await post(nemotron, {}), /"reasoning":"Hello"/);
-	assert.match(await post("@cf/qwen/qwen3.8-27b", off), /"reasoning":"Hello"/, "only models flagged for it are rewritten");
 });
 
 const signIn = async (env, ip) => (await (await worker.fetch(req("/api/auth", { method: "POST", ip }), env)).json()).token;

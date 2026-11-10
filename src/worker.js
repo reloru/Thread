@@ -166,8 +166,7 @@ async function chat(request, env) {
 		input.max_completion_tokens = model.defaultMaxTokens ?? DEFAULT_MAX_TOKENS;
 	}
 
-	const asContent = Boolean(model.replyInReasoningWhenThinkingOff && input.chat_template_kwargs?.enable_thinking === false);
-	const job = { model: model.id, input, tools, chatId: body.chatId, asContent, started };
+	const job = { model: model.id, input, tools, chatId: body.chatId, started };
 	// With a reply id the reply runs in its own Durable Object and survives the app going away (reply.js).
 	if (body.replyId !== undefined) {
 		const id = replyId(body.replyId);

@@ -51,9 +51,9 @@ test("gpt-oss word list gives the token IDs of the tokenizer", () => {
 });
 
 test("the same word has different IDs, and is split by some tokenizers", () => {
-	assert.equal(vocab("deepseek").sp.honestly, 37670);
+	assert.equal(vocab("gemma").sp.honestly, 29422);
 	assert.equal(vocab("qwen").sp.honestly, 25211);
-	assert.equal(lookup(vocab("deepseek"), "tapestry", false).usable, true);
+	assert.equal(lookup(vocab("gemma"), "tapestry", false).usable, true);
 	assert.equal(lookup(vocab("qwen"), "tapestry", false).usable, false);
 });
 

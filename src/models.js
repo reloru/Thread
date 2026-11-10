@@ -133,16 +133,6 @@ const enableThinking = (extra = {}) => ({
 // Only models with a verified way to switch reasoning off have one.
 const THINKING_OFF = { chat_template_kwargs: { enable_thinking: false } };
 
-const lowEffort = {
-	key: "low_effort",
-	path: "chat_template_kwargs",
-	label: "Low-effort thinking",
-	group: "Thinking",
-	type: "boolean",
-	default: false,
-	help: "When Thinking is on, the model thinks more briefly and uses far fewer tokens.",
-};
-
 // Schema fields of the OpenAI-compatible chat models that have no control in the app.
 // The Worker accepts them in params and passes them through unchanged.
 const CHAT_EXTRA_KEYS = [
@@ -165,7 +155,7 @@ const CHAT_EXTRA_KEYS = [
 	"web_search_options",
 ];
 
-// Every chat model rejects top_p 0 (HTTP 400, 500 on Nemotron), whatever its schema says.
+// Every chat model rejects top_p 0 (HTTP 400), whatever its schema says.
 const TOP_P_FLOOR = { min: 0.001 };
 
 // options.seed = false leaves seed out for models where repeated runs with the same seed did not match;
@@ -224,20 +214,9 @@ const olderControls = ({ reasoning = [], temp, penalties = [frequencyPenalty, pr
 const OLDER_EXTRA_KEYS = ["functions", "max_tokens", "raw", "tools"];
 
 // developer: true where a developer message was followed in testing, alone and next to a system message.
-// The others get the developer instructions at the end of the system message instead: DeepSeek, GLM-5.3 Flash
-// and gpt-oss-120b dropped a developer message (gpt-oss-120b's reply broke with one alone), Mistral rejects it.
+// The others get the developer instructions at the end of the system message instead: DeepSeek V4.1 Flash and
+// gpt-oss-120b dropped a developer message (gpt-oss-120b's reply broke with one alone), Mistral rejects it.
 export const MODELS = [
-	{
-		id: "@cf/zai-org/glm-5.3-flash",
-		name: "GLM-5.3 Flash",
-		vendor: "Z.ai",
-		vision: true,
-		context: 1048576,
-		price: [0.15, 0.5],
-		tokenizer: "glm",
-		controls: chatControls(1048576, [reasoningEffort(["max", "high", "low"], "max", ALWAYS_THINKS)], { seed: false }),
-		extraKeys: CHAT_EXTRA_KEYS,
-	},
 	{
 		id: "@cf/google/gemma-4-26b-a4b-it",
 		name: "Gemma 4 26B",
@@ -373,18 +352,6 @@ export const MODELS = [
 		extraKeys: OLDER_EXTRA_KEYS,
 	},
 	{
-		id: "@cf/deepseek-ai/deepseek-v4-flash-0731",
-		name: "DeepSeek V4 Flash",
-		vendor: "DeepSeek",
-		vision: false,
-		context: 1048576,
-		price: [0.44, 1.32],
-		tokenizer: "deepseek",
-		voiceParams: THINKING_OFF,
-		controls: chatControls(1048576, [reasoningEffort(["max", "high", "low"], "high", THINKING_TOGGLE), enableThinking()], { seed: false }),
-		extraKeys: CHAT_EXTRA_KEYS,
-	},
-	{
 		id: "@cf/qwen/qwen3.8-27b",
 		name: "Qwen 3.8 27B",
 		vendor: "Alibaba",
@@ -395,61 +362,6 @@ export const MODELS = [
 		voiceParams: THINKING_OFF,
 		developer: true,
 		controls: chatControls(262144, [reasoningEffort(["xhigh", "medium", "low"], "xhigh", THINKING_TOGGLE), enableThinking()]),
-		extraKeys: CHAT_EXTRA_KEYS,
-	},
-	{
-		id: "@cf/nvidia/nemotron-3-120b-a12b",
-		name: "Nemotron 3 120B",
-		vendor: "NVIDIA",
-		vision: false,
-		context: 256000,
-		price: [0.5, 1.5],
-		tokenizer: "nemotron",
-		voiceParams: THINKING_OFF,
-		// With Thinking off the service streams the reply in the reasoning field; the Worker moves it into content.
-		replyInReasoningWhenThinkingOff: true,
-		developer: true,
-		controls: chatControls(256000, [
-			enableThinking({ help: `${THINKING_HELP} This model has no Reasoning effort setting; use Low-effort thinking to make it think less.` }),
-			lowEffort,
-		]),
-		extraKeys: CHAT_EXTRA_KEYS,
-	},
-	{
-		id: "@cf/moonshotai/kimi-k2.6",
-		name: "Kimi K2.6",
-		vendor: "Moonshot AI",
-		vision: true,
-		context: 262144,
-		price: [0.95, 4],
-		tokenizer: "kimi",
-		voiceParams: { reasoning_effort: "none" },
-		developer: true,
-		controls: chatControls(262144, [reasoningEffort(["high", "none"], "high", "Choose None to skip thinking.")], { seed: false }),
-		extraKeys: CHAT_EXTRA_KEYS,
-	},
-	{
-		id: "@cf/moonshotai/kimi-k2.7-code",
-		name: "Kimi K2.7 Code",
-		vendor: "Moonshot AI",
-		vision: true,
-		context: 262144,
-		price: [0.95, 4],
-		tokenizer: "kimi",
-		developer: true,
-		controls: chatControls(262144, [], { seed: false }),
-		extraKeys: CHAT_EXTRA_KEYS,
-	},
-	{
-		id: "@cf/deepseek-ai/deepseek-v4-pro-0813",
-		name: "DeepSeek V4 Pro",
-		vendor: "DeepSeek",
-		vision: false,
-		context: 1048576,
-		price: [1.32, 3.96],
-		tokenizer: "deepseek",
-		voiceParams: THINKING_OFF,
-		controls: chatControls(1048576, [reasoningEffort(["max", "high", "low"], "high", THINKING_TOGGLE), enableThinking()], { seed: false }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
