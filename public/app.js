@@ -554,26 +554,20 @@ function renderSearch(run, t) {
 	const query = typeof t.args?.query === "string" ? t.args.query : "";
 	const label = t.preparing ? "Writing a search" : `${t.running ? "Searching" : r.error ? "Couldn't search" : "Searched"} “${query}”`;
 	const results = Array.isArray(r.results) ? r.results : [];
-	if (!results.length) {
-		const line = el("div", "tool-line");
-		line.append(icon("i-search"), el("span", "tool-label", label));
-		if (t.running) line.append(el("span", "tool-spin"));
-		run.append(line);
-		if (r.error) run.append(el("div", "error-box", r.error));
-		return run;
+	const line = el("div", "tool-line");
+	line.append(icon("i-search"), el("span", "tool-label", label));
+	if (t.running) line.append(el("span", "tool-spin"));
+	run.append(line);
+	if (r.error) run.append(el("div", "error-box", r.error));
+	if (results.length) {
+		const list = el("ol", "tool-results");
+		for (const item of results) {
+			const li = el("li");
+			li.append(pageLink(item.url, String(item.title || item.url || "")), el("span", "tool-host", hostOf(item.url)));
+			list.append(li);
+		}
+		run.append(list);
 	}
-	// The result links fold away so a reply with a few searches stays short on a phone.
-	const details = el("details", "tool-details");
-	const summary = el("summary");
-	summary.append(icon("i-search"), el("span", "tool-label", label), el("span", "tool-count", `${results.length}`), icon("i-chev"));
-	const list = el("ol", "tool-results");
-	for (const item of results) {
-		const li = el("li");
-		li.append(pageLink(item.url, String(item.title || item.url || "")), el("span", "tool-host", hostOf(item.url)));
-		list.append(li);
-	}
-	details.append(summary, list);
-	run.append(details);
 	return run;
 }
 
