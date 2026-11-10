@@ -333,7 +333,9 @@ function safeArgs(args) {
 export async function runTool(env, call, enabled, chatId, { vision = false, pageChars = MAX_TOOL_TEXT } = {}) {
 	const tool = TOOL_BY_FUNCTION[call.name];
 	if (!tool || !enabled.includes(tool)) {
-		const msg = `Tool ${call.name} is not available.`;
+		// gpt-oss reaches for the find and scroll tools of its own browser; naming the real ones lets it carry on.
+		const names = Object.keys(TOOL_BY_FUNCTION).filter((name) => enabled.includes(TOOL_BY_FUNCTION[name]));
+		const msg = `Tool ${String(call.name).slice(0, 80)} is not available. The tools you can call are: ${names.join(", ")}.`;
 		return { forModel: msg, forUser: { error: msg } };
 	}
 	let args;

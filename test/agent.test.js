@@ -195,7 +195,7 @@ test("disabled tools, bad JSON and tool errors are reported to the model", async
 	);
 	await collect(agentStream({ env, tools: ["python"], ...base }));
 	const toolMsgs = requests.at(-1).messages.filter((m) => m.role === "tool").map((m) => m.content);
-	assert.deepEqual(toolMsgs, ["Tool fetch_url is not available.", "Tool arguments were not valid JSON.", "Tool failed: container down"]);
+	assert.deepEqual(toolMsgs, ["Tool fetch_url is not available. The tools you can call are: run_python.", "Tool arguments were not valid JSON.", "Tool failed: container down"]);
 });
 
 test("the loop stops after MAX_ROUNDS with a note, keeping tools defined", async () => {

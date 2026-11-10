@@ -583,6 +583,16 @@ function renderToolRuns(box, tools) {
 			const run = el("div", "tool-run");
 			const r = t.result || {};
 			if (t.name === "web_search") return renderSearch(run, t);
+			if (t.name !== "fetch_url" && t.name !== "run_python") {
+				// A tool that doesn't exist (gpt-oss calls the find tool of its own browser): the call and its error.
+				const line = el("div", "tool-line");
+				const name = String(t.name || "").replace(/<\|[\s\S]*$/, "").slice(0, 40) || "a tool";
+				line.append(icon("i-x"), el("span", "tool-label", `${t.preparing || t.running ? "Calling" : "Called"} ${name}`));
+				if (t.running) line.append(el("span", "tool-spin"));
+				run.append(line);
+				if (r.error) run.append(el("div", "error-box", r.error));
+				return run;
+			}
 			if (t.name === "fetch_url") {
 				const line = el("div", "tool-line");
 				line.append(icon("i-globe"));
@@ -792,10 +802,12 @@ function toolSummary(tools) {
 			const r = t.result || {};
 			if (t.name === "fetch_url") return `(Earlier tool use: read ${t.args?.url || "a page"}${r.error ? `, which failed: ${r.error}` : ""}.)`;
 			if (t.name === "web_search") return `(Earlier tool use: searched the web for “${t.args?.query || ""}”${r.error ? `, which failed: ${r.error}` : ""}.)`;
+			if (t.name !== "run_python") return "";
 			const output = [r.stdout, r.stderr, r.error].filter(Boolean).join("\n").slice(0, 2000) || "(no output)";
 			const figs = r.images?.length ? `\n(${r.images.length} figure(s) were shown to the user.)` : "";
 			return `(Earlier tool use: ran Python.)\n\`\`\`python\n${t.args?.code ?? ""}\n\`\`\`\nOutput:\n${output}${figs}`;
 		})
+		.filter(Boolean)
 		.join("\n\n");
 }
 
