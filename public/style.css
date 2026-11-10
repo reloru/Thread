@@ -542,7 +542,6 @@ svg {
 .tool-details summary::-webkit-details-marker { display: none; }
 .tool-details[open] summary svg:last-child { transform: rotate(180deg); }
 .tool-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tool-count { flex: none; min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--border); font-size: 12px; line-height: 18px; text-align: center; }
 .tool-results { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 0; padding: 0 0 0 24px; font-size: 14px; line-height: 1.35; }
 .tool-results a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
 .tool-host { display: block; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
