@@ -69,7 +69,7 @@ export function longDate(iso) {
 
 /**
  * The note added to the system message when tools are on: which tools there are, that they reach the live internet
- * (search first when the URL isn't known) or run code, and today's date. Without it models said they had no web
+ * (search first when the URL isn't known) or run code, and today's date. Without it PhoneLLM said it had no web
  * access and guessed URLs. date: YYYY-MM-DD, the device's local date.
  */
 export function toolNote(tools, { vision = false, date } = {}) {

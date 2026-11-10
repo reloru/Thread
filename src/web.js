@@ -18,8 +18,8 @@ export const VIEWPORT = { width: 1280, height: 800 };
  * element (its href is the result), with the `title` and `snippet` elements below it on the page; they are matched to
  * the link above them by their position, since some layouts (DuckDuckGo Lite) don't nest them in one element.
  * Left out: Google blocks Browser Run ("unusual traffic"), Mojeek shows a CAPTCHA, Startpage came back empty, Yahoo
- * is mostly ads, and Bing answered 4 of 6 test queries with results for the first word only ("James 1 NIV" for
- * "james webb telescope discoveries"), which would look like a successful search.
+ * is mostly ads. Bing's results for 4 of 6 test queries of several words mentioned none of the words after the first
+ * ("James 1 NIV" for "james webb telescope discoveries"), which would look like a successful search.
  */
 export const ENGINES = [
 	{
@@ -193,8 +193,8 @@ export const isBlank = (markdown) => !String(markdown ?? "").replace(FRONT_MATTE
 /**
  * fetch_url. options: { vision, maxChars }. show_page (vision models only) loads the page once through /snapshot for
  * the Markdown and a JPEG of the top of the page together. A page with no text is loaded again, with everything it
- * asks for and waiting until the network is nearly idle, for pages that draw their content with JavaScript: crates.io
- * came back empty without its stylesheets and fonts even then, and with 5,825 characters with them.
+ * asks for and waiting until the network is nearly idle, for pages that draw their content with JavaScript: in testing,
+ * crates.io came back empty without its stylesheets and fonts even then, and with 5,825 characters with them.
  * Returns { forModel, forUser, image? }: image is a data URL for the loop to show the model.
  */
 export async function readPage(env, args, { vision = false, maxChars }) {
