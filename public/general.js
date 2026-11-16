@@ -1,6 +1,9 @@
-// Settings page: system and developer instructions sent with every chat, banned words, notifications for this device, and appearance.
+// Settings page: system and developer instructions sent with every chat, banned words, notifications for this
+// device, appearance, and backups of the chats and settings.
 
 import { MAX_WORDS } from "./words.js";
+import { BackupError } from "./chats.js";
+import { deliver } from "./backup.js";
 
 const KEY_INSTRUCTIONS = "thread.instructions";
 const KEY_DEVELOPER = "thread.developer";
@@ -43,11 +46,21 @@ export function switchRow(el, { title, sub, checked, onToggle }) {
 	};
 }
 
-/** deps: { storage, el, icon, notify, words, currentModel } */
+const plural = (n, word) => `${n.toLocaleString("en-US")} ${word}${n === 1 ? "" : "s"}`;
+const megabytes = (bytes) => (bytes < 1048576 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1048576).toFixed(1)} MB`);
+
+/** deps: { storage, el, icon, notify, words, backup, picker, onImport, currentModel }. picker: the file input for imports. */
 export function createGeneral(deps) {
-	const { storage, el, icon, notify, words, currentModel } = deps;
+	const { storage, el, icon, notify, words, backup, picker, onImport, currentModel } = deps;
 	let instructions = storage.get(KEY_INSTRUCTIONS) || "";
 	let developer = storage.get(KEY_DEVELOPER) || "";
+	// Where the backup group reports progress; it is drawn anew each time Settings opens.
+	let sayData = () => {};
+	picker.addEventListener("change", () => {
+		const [file] = picker.files;
+		picker.value = "";
+		if (file) importBackup(file);
+	});
 
 	return {
 		/** Sent as the system message with every chat request. */
@@ -55,7 +68,7 @@ export function createGeneral(deps) {
 		/** Sent as a developer message, or appended to the system message on models that don't follow one. */
 		developer: () => developer.trim(),
 		render(container) {
-			container.replaceChildren(instructionsGroup(), wordsGroup(), notificationsGroup(), appearanceGroup());
+			container.replaceChildren(instructionsGroup(), wordsGroup(), notificationsGroup(), appearanceGroup(), dataGroup());
 		},
 	};
 
@@ -236,6 +249,78 @@ export function createGeneral(deps) {
 		};
 		sync();
 		return group("Notifications", sw.row);
+	}
+
+	function dataGroup() {
+		const status = el("p", "note");
+		status.setAttribute("role", "status");
+		status.hidden = true;
+		sayData = (text) => {
+			status.textContent = text;
+			status.hidden = !text;
+		};
+		const exportBtn = el("button", "set-btn", "Export backup");
+		exportBtn.type = "button";
+		const importBtn = el("button", "set-btn", "Import backup");
+		importBtn.type = "button";
+		// A backup that is made and waiting for a tap: sharing a file has to follow a tap closely, and reading
+		// a long history can take longer than the browser allows.
+		let ready = null;
+		exportBtn.addEventListener("click", async () => {
+			exportBtn.disabled = true;
+			try {
+				if (!ready) {
+					sayData("Preparing the backup…");
+					ready = await backup.backupFile();
+				}
+				const { file, count } = ready;
+				const what = `${plural(count, "chat")}, ${megabytes(file.size)}`;
+				const result = await deliver(file);
+				if (result === "blocked") {
+					exportBtn.textContent = "Save backup";
+					sayData(`The backup is ready (${what}). Tap Save backup.`);
+					return;
+				}
+				ready = null;
+				exportBtn.textContent = "Export backup";
+				sayData(result === "cancelled" ? "" : result === "saved" ? `Saved ${file.name} (${what}).` : `Backup shared (${what}).`);
+			} catch {
+				ready = null;
+				sayData("Couldn't make the backup.");
+			} finally {
+				exportBtn.disabled = false;
+			}
+		});
+		importBtn.addEventListener("click", () => picker.click());
+		const buttons = el("div", "set-btns");
+		buttons.append(exportBtn, importBtn);
+		const hint = el(
+			"p",
+			"hint",
+			"Chats and settings are kept only on this device. A backup is one file with every chat, images included, and your instructions, banned words, model settings and appearance. It doesn't include the sign-in. Importing adds the chats this device doesn't have and replaces the ones that are older here; nothing is deleted.",
+		);
+		return group("Backup", buttons, status, hint);
+	}
+
+	async function importBackup(file) {
+		sayData("Importing…");
+		let result;
+		try {
+			result = await backup.restore(file);
+		} catch (err) {
+			sayData(err instanceof BackupError ? err.message : "Couldn't store the chats on this device. It may be out of space.");
+			return;
+		}
+		const said = [result.saved.length ? `Imported ${plural(result.saved.length, "chat")}.` : "That backup has no chats that are new to this device."];
+		if (result.saved.length && result.kept) said.push(`${plural(result.kept, "chat")} already up to date here.`);
+		if (result.skipped) said.push(`${plural(result.skipped, "chat")} couldn't be read.`);
+		sayData(said.join(" "));
+		onImport(result.saved);
+		const question = "This backup also has settings (instructions, banned words, model settings, appearance). Replace this device's settings with them?";
+		if (Object.keys(result.settings).length && backup.settingsDiffer(result.settings) && confirm(question)) {
+			backup.applySettings(result.settings);
+			location.reload();
+		}
 	}
 
 	function appearanceGroup() {

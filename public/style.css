@@ -364,6 +364,10 @@ svg {
 }
 .actions button:active { background: var(--surface); }
 .actions svg { width: 17px; height: 17px; }
+.user-actions { min-height: 0; margin: 2px -6px 0 0; }
+.user-actions button { width: 32px; height: 30px; color: var(--faint); }
+.user-actions svg { width: 16px; height: 16px; }
+.msg.user.editing .bubble { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent); }
 .actions .meta { margin-left: 6px; color: var(--faint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Composer */
@@ -577,6 +581,23 @@ svg {
 
 .notice { max-width: 760px; margin: 0 auto 6px; color: var(--muted); font-size: 13px; text-align: center; }
 
+/* Shown while a sent message is being edited in the composer. */
+.editing {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	max-width: 760px;
+	margin: 0 auto 6px;
+	padding: 4px 4px 4px 12px;
+	border-radius: 14px;
+	background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+	color: var(--muted);
+	font-size: 13px;
+	line-height: 1.35;
+}
+.editing svg { width: 16px; height: 16px; color: var(--accent); }
+.editing p { flex: 1; min-width: 0; margin: 0; }
+
 /* One-time request to allow notifications, above the chips. */
 .notify-card {
 	display: grid;
@@ -643,11 +664,14 @@ svg {
 	transition: opacity 0.25s;
 }
 .scrim.show { opacity: 1; }
+/* Above the chat list while a chat's options are open over it. */
+.scrim.raised { z-index: 21; }
 
+/* Sized to the visual viewport, like #app, so search results stay above the keyboard. */
 .drawer {
 	position: fixed;
-	top: 0;
-	bottom: 0;
+	top: var(--vv-top, 0px);
+	height: var(--vv-h, 100dvh);
 	left: 0;
 	z-index: 20;
 	width: min(84vw, 320px);
@@ -673,15 +697,56 @@ svg {
 .chat-item .open {
 	flex: 1;
 	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
 	padding: 10px 6px 10px 10px;
 	border: 0;
 	background: transparent;
 	font-size: 15px;
 	text-align: left;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
 }
+.chat-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-snippet {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	overflow: hidden;
+	color: var(--muted);
+	font-size: 13px;
+	line-height: 1.35;
+	overflow-wrap: anywhere;
+}
+.chat-snippet mark { border-radius: 3px; background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--text); }
+
+.chat-search {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: 40px;
+	margin: 2px 12px 6px;
+	padding: 0 10px;
+	border-radius: 12px;
+	background: var(--surface);
+}
+.chat-search svg { width: 17px; height: 17px; color: var(--faint); }
+.chat-search input {
+	flex: 1;
+	min-width: 0;
+	height: 100%;
+	padding: 0;
+	border: 0;
+	outline: 0;
+	background: transparent;
+	color: var(--text);
+	font: inherit;
+	font-size: 16px;
+	-webkit-appearance: none;
+	appearance: none;
+}
+.chat-search input::placeholder { color: var(--faint); }
+.chat-search:focus-within { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, var(--border)); }
 .chat-item .icon-btn { width: 36px; height: 36px; color: var(--faint); }
 .chat-item .icon-btn svg { width: 18px; height: 18px; }
 
@@ -723,6 +788,26 @@ svg {
 .sheet-title { font-size: 17px; font-weight: 650; }
 .sheet-head .icon-btn { color: var(--muted); }
 .sheet-note { margin: 10px 0 2px; color: var(--faint); font-size: 12px; text-align: center; }
+
+.chat-sheet { z-index: 23; }
+.chat-sheet .sheet-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-sheet .sheet-head { min-height: 40px; padding-right: 12px; }
+.action-list { display: flex; flex-direction: column; }
+.action-row {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	width: 100%;
+	padding: 13px 12px;
+	border: 0;
+	border-radius: 14px;
+	background: transparent;
+	font-size: 16px;
+	text-align: left;
+}
+.action-row svg { width: 20px; height: 20px; color: var(--muted); }
+.action-row:active { background: var(--surface); }
+.action-row.danger, .action-row.danger svg { color: var(--danger); }
 
 .model-row {
 	display: flex;
@@ -900,6 +985,21 @@ svg {
 .set-text:focus { border-color: var(--accent); }
 .set-text::placeholder { color: var(--faint); }
 .set-text.mono { font-family: var(--mono); }
+
+.set-btns { display: flex; gap: 8px; }
+.set-btn {
+	flex: 1;
+	min-width: 0;
+	height: 44px;
+	padding: 0 12px;
+	border: 0;
+	border-radius: 12px;
+	background: var(--surface);
+	font-size: 15px;
+	font-weight: 560;
+}
+.set-btn:active { background: var(--surface-2); }
+.set-btn:disabled { opacity: 0.5; }
 
 .hint { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 .note { margin: 6px 0 0; color: color-mix(in srgb, var(--accent) 75%, var(--text)); font-size: 13px; line-height: 1.45; }
@@ -1153,7 +1253,8 @@ svg {
 .voice-row.selected .tick { visibility: visible; }
 
 @media (hover: hover) {
-	.icon-btn:hover, .actions button:hover, .copy-code:hover, .text-btn:hover, .model-row:hover, .field-reset:hover, .text-link:hover { background: var(--surface); }
+	.icon-btn:hover, .actions button:hover, .copy-code:hover, .text-btn:hover, .model-row:hover, .field-reset:hover, .text-link:hover, .action-row:hover { background: var(--surface); }
+	.set-btn:hover { background: var(--surface-2); }
 	.model-pill:hover { background: var(--surface-2); }
 	.md a:hover { text-decoration: underline; }
 }
