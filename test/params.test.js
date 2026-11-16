@@ -14,6 +14,7 @@ const GRANITE = byId("@cf/ibm-granite/granite-4.0-h-micro");
 const MISTRAL = byId("@cf/mistralai/mistral-small-3.1-24b-instruct");
 const OSS20 = byId("@cf/openai/gpt-oss-20b");
 const PHONE = byId("@cf/daily-co/phonellm-mini-alpha-2");
+const INKLING = byId("@cf/thinkingmachines/inkling-2-small");
 
 test("every model's controls have unique keys and valid groups", () => {
 	for (const m of MODELS) {
@@ -34,6 +35,7 @@ test("display defaults match what applies when a field is empty", () => {
 	assert.deepEqual(defaults(GLM), { reasoning_effort: "max", ...chat });
 	assert.deepEqual(defaults(GEMMA), { enable_thinking: true, ...chat });
 	assert.deepEqual(defaults(DEEPSEEK), { reasoning_effort: "high", enable_thinking: true, ...chat });
+	assert.deepEqual(defaults(INKLING), chat);
 	assert.deepEqual(defaults(QWEN), { reasoning_effort: "xhigh", enable_thinking: true, ...chat });
 	// The older schema documents no default for top_p, top_k or the penalties.
 	assert.deepEqual(defaults(GRANITE), { temperature: 0.6, max_completion_tokens: 16384 });
@@ -175,8 +177,27 @@ test("only the models with a vision input accept images", () => {
 			"@cf/google/gemma-4-26b-a4b-it",
 			"@cf/mistralai/mistral-small-3.1-24b-instruct",
 			"@cf/qwen/qwen3.8-27b",
+			"@cf/thinkingmachines/inkling-2-small",
 		],
 	);
+});
+
+test("Inkling 2 Small: no thinking controls, stop sequences, seed or logit bias; temperature up to 1.2", () => {
+	assert.deepEqual(
+		INKLING.controls.map((c) => c.key),
+		["temperature", "top_p", "frequency_penalty", "presence_penalty", "max_completion_tokens", "response_format"],
+	);
+	assert.deepEqual(toWire(INKLING, { values: { temperature: 1.2, frequency_penalty: -2, max_completion_tokens: 1048576 } }), {
+		temperature: 1.2,
+		frequency_penalty: -2,
+		max_completion_tokens: 1048576,
+	});
+	assert.throws(() => toWire(INKLING, { values: { temperature: 1.25 } }), /between 0 and 1.2/);
+	for (const p of [{ reasoning_effort: "none" }, { chat_template_kwargs: { enable_thinking: false } }, { stop: ["x"] }, { seed: 1 }, { logit_bias: { 1: -100 } }]) {
+		assert.throws(() => sanitizeParams(p, INKLING), /not a parameter of Inkling 2 Small/, JSON.stringify(p));
+	}
+	assert.equal(INKLING.voiceParams, undefined);
+	assert.equal(INKLING.tokenizer, undefined);
 });
 
 test("every model's voice overrides are valid parameters for that model", () => {

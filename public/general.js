@@ -209,7 +209,7 @@ export function createGeneral(deps) {
 		const hint = el(
 			"p",
 			"hint",
-			"Words the model is blocked from writing, in every chat. Each ban covers the word as it appears in a sentence or at the start of one (“word”, “Word”). Turn on “with no space before it” to also catch it right after a quote, bracket or **, which can also block it in code. The model can still use a synonym, and a blocked word can make a reply come out odd; if so, turn banned words off for that model in its settings. Llama 3.3, Granite, Mistral and DeepSeek V4.1 Flash don't support this.",
+			"Words the model is blocked from writing, in every chat. Each ban covers the word as it appears in a sentence or at the start of one (“word”, “Word”). Turn on “with no space before it” to also catch it right after a quote, bracket or **, which can also block it in code. The model can still use a synonym, and a blocked word can make a reply come out odd; if so, turn banned words off for that model in its settings. Llama 3.3, Granite, Mistral, DeepSeek V4.1 Flash and Inkling 2 Small don't support this.",
 		);
 		return group("Banned words", hint, form, error, list);
 	}
