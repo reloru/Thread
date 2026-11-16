@@ -313,12 +313,13 @@ export const MODELS = [
 		context: 1048576,
 		price: [0.3, 1.0],
 		developer: true,
-		// No reasoning controls: every reasoning_effort, "none" included, thought about as long in testing, and
-		// with enable_thinking off the thinking came back inside the reply. So no voice override either.
+		// Effort: on a hard puzzle low and minimal thought about half as long as high (no overlap in 15 runs against 10)
+		// and max longest; medium and none were indistinguishable from high, and none never turned thinking off.
+		// No Thinking toggle: with enable_thinking off the thinking came back inside the reply. So no voice override either.
 		// No tokenizer: the service refuses logit_bias on this model ("not yet supported with speculative decoding").
 		// Stop sequences ended the reply inside its thinking, before any answer.
 		// Above 1.2 the thinking turned to multilingual garbage until the length limit (1 of 2 runs at 1.3, 2 of 2 at 1.4).
-		controls: chatControls(1048576, [], { seed: false, bias: false, stop: false, temp: { max: 1.2 } }),
+		controls: chatControls(1048576, [reasoningEffort(["max", "high", "low"], "high", ALWAYS_THINKS)], { seed: false, bias: false, stop: false, temp: { max: 1.2 } }),
 		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
