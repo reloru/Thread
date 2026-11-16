@@ -35,7 +35,7 @@ test("display defaults match what applies when a field is empty", () => {
 	assert.deepEqual(defaults(GLM), { reasoning_effort: "max", ...chat });
 	assert.deepEqual(defaults(GEMMA), { enable_thinking: true, ...chat });
 	assert.deepEqual(defaults(DEEPSEEK), { reasoning_effort: "high", enable_thinking: true, ...chat });
-	assert.deepEqual(defaults(INKLING), chat);
+	assert.deepEqual(defaults(INKLING), { reasoning_effort: "high", ...chat });
 	assert.deepEqual(defaults(QWEN), { reasoning_effort: "xhigh", enable_thinking: true, ...chat });
 	// The older schema documents no default for top_p, top_k or the penalties.
 	assert.deepEqual(defaults(GRANITE), { temperature: 0.6, max_completion_tokens: 16384 });
@@ -182,10 +182,10 @@ test("only the models with a vision input accept images", () => {
 	);
 });
 
-test("Inkling 2 Small: no thinking controls, stop sequences, seed or logit bias; temperature up to 1.2", () => {
+test("Inkling 2 Small: effort max, high or low; no Thinking toggle, stop sequences, seed or logit bias; temperature up to 1.2", () => {
 	assert.deepEqual(
 		INKLING.controls.map((c) => c.key),
-		["temperature", "top_p", "frequency_penalty", "presence_penalty", "max_completion_tokens", "response_format"],
+		["reasoning_effort", "temperature", "top_p", "frequency_penalty", "presence_penalty", "max_completion_tokens", "response_format"],
 	);
 	assert.deepEqual(toWire(INKLING, { values: { temperature: 1.2, frequency_penalty: -2, max_completion_tokens: 1048576 } }), {
 		temperature: 1.2,
@@ -193,7 +193,9 @@ test("Inkling 2 Small: no thinking controls, stop sequences, seed or logit bias;
 		max_completion_tokens: 1048576,
 	});
 	assert.throws(() => toWire(INKLING, { values: { temperature: 1.25 } }), /between 0 and 1.2/);
-	for (const p of [{ reasoning_effort: "none" }, { chat_template_kwargs: { enable_thinking: false } }, { stop: ["x"] }, { seed: 1 }, { logit_bias: { 1: -100 } }]) {
+	for (const e of ["max", "high", "low"]) assert.deepEqual(toWire(INKLING, { values: { reasoning_effort: e } }), { reasoning_effort: e });
+	for (const e of ["none", "minimal", "medium", "xhigh"]) assert.throws(() => toWire(INKLING, { values: { reasoning_effort: e } }), /one of max, high, low/, e);
+	for (const p of [{ chat_template_kwargs: { enable_thinking: false } }, { stop: ["x"] }, { seed: 1 }, { logit_bias: { 1: -100 } }]) {
 		assert.throws(() => sanitizeParams(p, INKLING), /not a parameter of Inkling 2 Small/, JSON.stringify(p));
 	}
 	assert.equal(INKLING.voiceParams, undefined);
