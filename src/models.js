@@ -159,15 +159,17 @@ const CHAT_EXTRA_KEYS = [
 const TOP_P_FLOOR = { min: 0.001 };
 
 // options.seed = false leaves seed out for models where repeated runs with the same seed did not match;
-// options.bias = false leaves logit_bias out for models the service refuses it on.
+// options.bias = false leaves logit_bias out for models the service refuses it on;
+// options.stop = false leaves stop sequences out for models that apply them to their thinking too;
+// options.temp narrows temperature.
 const chatControls = (context, reasoning, options = {}) => [
 	...reasoning,
-	temperature(),
+	temperature(options.temp),
 	topP(TOP_P_FLOOR),
 	frequencyPenalty,
 	presencePenalty,
 	maxTokens(context),
-	stop,
+	...(options.stop === false ? [] : [stop]),
 	...(options.seed === false ? [] : [seed()]),
 	responseFormat(["json_object"]),
 	...(options.bias === false ? [] : [logitBias]),
@@ -302,6 +304,22 @@ export const MODELS = [
 			}),
 		}),
 		extraKeys: OLDER_EXTRA_KEYS,
+	},
+	{
+		id: "@cf/thinkingmachines/inkling-2-small",
+		name: "Inkling 2 Small",
+		vendor: "Thinking Machines",
+		vision: true,
+		context: 1048576,
+		price: [0.3, 1.0],
+		developer: true,
+		// No reasoning controls: every reasoning_effort, "none" included, thought about as long in testing, and
+		// with enable_thinking off the thinking came back inside the reply. So no voice override either.
+		// No tokenizer: the service refuses logit_bias on this model ("not yet supported with speculative decoding").
+		// Stop sequences ended the reply inside its thinking, before any answer.
+		// Above 1.2 the thinking turned to multilingual garbage until the length limit (1 of 2 runs at 1.3, 2 of 2 at 1.4).
+		controls: chatControls(1048576, [], { seed: false, bias: false, stop: false, temp: { max: 1.2 } }),
+		extraKeys: CHAT_EXTRA_KEYS,
 	},
 	{
 		id: "@cf/deepseek-ai/deepseek-v4.1-flash-1017",

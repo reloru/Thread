@@ -282,6 +282,13 @@ async function relayFrom(reader, send, round) {
 			const delta = choice?.delta;
 			if (choice?.finish_reason) finish = choice.finish_reason;
 			if (delta?.tool_calls) {
+				// Inkling 2 Small sends reasoning (and could send text) in the chunk that starts a call.
+				const reasoning = delta.reasoning_content ?? delta.reasoning;
+				const text = typeof delta.content === "string" ? delta.content : "";
+				if (reasoning || text) {
+					content += text;
+					send({ choices: [{ index: 0, delta: { ...(reasoning ? { reasoning_content: reasoning } : {}), ...(text ? { content: text } : {}) } }] });
+				}
 				for (const tc of delta.tool_calls) {
 					const key = tc.index ?? 0;
 					const call = calls.get(key) || { id: "", name: "", args: "", announced: false };

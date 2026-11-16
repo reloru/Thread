@@ -83,6 +83,40 @@ test("relay forwards content, hides tool-call fragments, and assembles calls", a
 	assert.deepEqual(sent[1], { thread: { type: "tool_prepare", id: "call_1", name: "run_python" } });
 });
 
+test("reasoning that arrives in the same chunk as a tool call still reaches the app", async () => {
+	// Shaped like Inkling 2 Small's stream: the first call fragment carries the end of its reasoning.
+	const sent = [];
+	const { calls, content } = await relay(
+		sse([
+			delta({ reasoning: "The user asks", reasoning_content: "The user asks" }),
+			delta({
+				reasoning: " for Paris. Need a tool.",
+				reasoning_content: " for Paris. Need a tool.",
+				tool_calls: [{ id: "c1", type: "function", index: 0, function: { name: "fetch_url", arguments: '{"url":"https://e.com' } }],
+			}),
+			delta({ tool_calls: [{ index: 0, function: { arguments: '"}' } }] }, "tool_calls"),
+			"[DONE]",
+		]),
+		(d) => sent.push(d),
+	);
+	assert.equal(content, "");
+	assert.deepEqual(calls, [{ id: "c1", name: "fetch_url", args: '{"url":"https://e.com"}' }]);
+	assert.equal(sent.length, 3);
+	assert.match(sent[0], /The user asks/);
+	assert.deepEqual(sent[1], { choices: [{ index: 0, delta: { reasoning_content: " for Paris. Need a tool." } }] });
+	assert.deepEqual(sent[2], { thread: { type: "tool_prepare", id: "c1", name: "fetch_url" } });
+});
+
+test("text in a chunk that starts a call is forwarded and kept for the next round", async () => {
+	const sent = [];
+	const { content } = await relay(
+		sse([delta({ content: "Checking. ", tool_calls: [{ id: "c1", type: "function", index: 0, function: { name: "web_search", arguments: '{"query":"x"}' } }] }, "tool_calls"), "[DONE]"]),
+		(d) => sent.push(d),
+	);
+	assert.equal(content, "Checking. ");
+	assert.deepEqual(sent[0], { choices: [{ index: 0, delta: { content: "Checking. " } }] });
+});
+
 // A model stream that keeps writing one call's arguments until it is cancelled.
 function endless(name, id) {
 	let n = 0;
