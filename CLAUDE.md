@@ -7,7 +7,7 @@ Mobile-first AI chat (installable web app) on Cloudflare Workers and Workers AI.
 - Unit tests: `node --test` (Node 22, no dependencies).
 - Sandbox runner tests: `python3 test/runner_test.py`.
 - Build check: `npx --yes wrangler@4.147.0 deploy --dry-run --outdir dist`. It builds the container image, so it needs Docker; CI runs it, a session without Docker cannot.
-- Trying a change in a browser without Docker: `node tools/dev-server.mjs --fake` (port 8787, passcode `dev`) runs the real Worker code in Node with stand-in bindings and canned replies; without `--fake` it calls Workers AI over REST with the session's Cloudflare credentials (billed). Drive it with Playwright at the iPhone 14 Pro Max viewport (430×932).
+- Trying a change in a browser without Docker: `node tools/dev-server.mjs --fake` (port 8787, passcode `dev`) runs the real Worker code in Node with stand-in bindings and canned replies; without `--fake` it calls Workers AI over REST with the session's Cloudflare credentials (billed). Drive it with Playwright at the iPhone 14 Pro Max's full screen, `viewport: { width: 430, height: 932 }`, `deviceScaleFactor: 3`, as the Home Screen app gets it. Playwright's own "iPhone 14 Pro Max" profile is 430×740, a Safari tab with its bars.
 
 ## Deploy
 
