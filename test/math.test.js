@@ -54,6 +54,18 @@ test("escaped brackets around a citation stay text", () => {
 	assert.equal(renderMarkdown("\\[1\\] Smith, J. (2020)"), "<p>[1] Smith, J. (2020)</p>");
 });
 
+test("escaped brackets around a placeholder in prose stay text", () => {
+	assert.equal(renderMarkdown("Dear \\[Your Name\\],"), "<p>Dear [Your Name],</p>");
+	assert.equal(renderMarkdown("fill in \\[date\\] here"), "<p>fill in [date] here</p>");
+	assert.equal(renderMarkdown("\\[Company Name\\]"), "<p>[Company Name]</p>");
+	assert.equal(renderMarkdown("\\[1\\]"), "<p>[1]</p>");
+	assert.equal(renderMarkdown("a \\(lowercase word\\) aside"), "<p>a (lowercase word) aside</p>");
+	// Still formulas: one letter or a short symbol, and anything with TeX in it.
+	assert.equal(renderMarkdown("where \\(P\\) and \\(dx\\)"), `<p>where ${span("P")} and ${span("dx")}</p>`);
+	assert.equal(renderMarkdown("\\[ \\text{Total} = 55 \\]"), block("\\text{Total} = 55"));
+	assert.equal(renderMarkdown("\\[ x \\]"), block("x"), "a lone letter in \\[ \\] is a formula");
+});
+
 test("an opening delimiter that never closes isn't a formula", () => {
 	assert.equal(renderMarkdown("$$$ pricing\n\nmore"), "<p>$$$ pricing</p><p>more</p>");
 	assert.equal(renderMarkdown("$$ and then prose\n\nmore"), "<p>$$ and then prose</p><p>more</p>");

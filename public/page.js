@@ -10,7 +10,7 @@ export const PAGE_IDS = [
 	"modelName", "newBtn", "notice", "notifyAllow", "notifyCard", "notifyLater", "passInput", "passToggle",
 	"prefs", "prefsBack", "prefsBody", "prefsBtn", "scrim", "scroller", "sendBtn", "settings", "settingsBack",
 	"settingsBody", "settingsBtn", "settingsReset", "settingsTitle", "sheet", "toBottom", "toast", "toolChips",
-	"unlockBtn", "usage", "voice", "voiceBtn",
+	"unlockBtn", "usage", "viewer", "viewerClose", "viewerImg", "viewerShare", "voice", "voiceBtn",
 	// voice.js
 	"voiceChip", "voiceChipName", "voiceClose", "voiceFilter", "voiceHint", "voiceList", "voiceModel",
 	"voiceModes", "voiceMute", "voiceOrb", "voiceReply", "voiceScrim", "voiceSheet", "voiceSheetClose",

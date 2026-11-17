@@ -1,3 +1,5 @@
+import { highlight } from "./highlight.js";
+
 // Minimal GitHub-flavored Markdown renderer for model output.
 // Every text path is HTML-escaped; link hrefs are restricted to http(s) and mailto.
 // The whole message is re-rendered on every streaming frame, so every pattern here
@@ -260,6 +262,7 @@ function mathBlock(lines, i) {
 	const end = first.indexOf(close);
 	if (end !== -1) {
 		const tex = first.slice(0, end).trim();
+		if (close === "\\]" && (CITATION.test(tex) || placeholder(tex, true))) return null;
 		return tex && MATH_TAIL.test(first.slice(end + close.length)) ? { tex, next: i + 1 } : null;
 	}
 	// Over several lines only from a line with nothing but the delimiter, as every sampled model wrote one; "$$ off
@@ -332,7 +335,7 @@ function codeBlock(code, lang) {
 	return (
 		`<div class="code"><div class="code-head"><span>${label}</span>` +
 		`<button type="button" class="copy-code" aria-label="Copy code">Copy</button></div>` +
-		`<pre><code>${escapeHtml(code)}</code></pre></div>`
+		`<pre><code>${highlight(code, lang)}</code></pre></div>`
 	);
 }
 
@@ -509,6 +512,13 @@ function codeSpans(text, stash) {
 
 // "\[1\]" and "\[1, 2\]" are escaped brackets around a citation, not a formula.
 const CITATION = /^\s*\^?\d+(\s*[,–-]\s*\d+)*\s*$/;
+// Escaped brackets around a placeholder in prose ("Dear \[Your Name\],", "fill in \[date\]"): only letters, spaces
+// and punctuation, nothing a formula would have, and a word of two letters or more; inside \( \) two such words,
+// so \(x\), \(dx\) and \[ x \] stay math.
+const PLAIN = /^[\p{L}\s'’.,:;!?&-]+$/u;
+const LONG_WORD = /\p{L}{2,}/u;
+const TWO_WORDS = /\p{L}{2,}\s+\p{L}{2,}/u;
+const placeholder = (tex, bracket) => PLAIN.test(tex.trim()) && (bracket ? LONG_WORD : TWO_WORDS).test(tex);
 // "I have $5 and you have 10$": a number, then words, with nothing a formula would have.
 const PROSE_AMOUNT = /^\d[^\\^_=+\-*/<>{}|]*\s[^\\^_=+\-*/<>{}|]*$/;
 const SPACE = /\s/;
@@ -542,7 +552,7 @@ function mathSpans(text, stash) {
 			if (open === "(" || open === "[") {
 				const end = find(open === "(" ? "\\)" : "\\]", i + 2);
 				const tex = end === -1 ? "" : text.slice(i + 2, end);
-				if (tex.trim() && tex.length <= MATH_MAX_CHARS && !(open === "[" && CITATION.test(tex))) {
+				if (tex.trim() && tex.length <= MATH_MAX_CHARS && !(open === "[" && CITATION.test(tex)) && !placeholder(tex, open === "[")) {
 					take(end + 2, span(tex, open === "["));
 					continue;
 				}
