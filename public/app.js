@@ -9,6 +9,7 @@ import { createGeneral } from "./general.js";
 import { createWords } from "./words.js";
 import { makeTitle, matchesTerms, searchTerms, snippet } from "./chats.js";
 import { createBackup, deliver } from "./backup.js";
+import { createViewer } from "./viewer.js";
 import { checkPage } from "./page.js";
 
 // Stops here, before anything uses the page, when the page and the scripts are from different versions.
@@ -46,6 +47,10 @@ const els = {
 	chatShare: $("chatShare"),
 	chatDelete: $("chatDelete"),
 	backupFile: $("backupFile"),
+	viewer: $("viewer"),
+	viewerImg: $("viewerImg"),
+	viewerClose: $("viewerClose"),
+	viewerShare: $("viewerShare"),
 	prefsBtn: $("prefsBtn"),
 	notifyCard: $("notifyCard"),
 	notifyAllow: $("notifyAllow"),
@@ -157,6 +162,17 @@ const usage = createUsage({ storage, el, api, canFetch: () => Boolean(state.toke
 const notify = createNotify({ storage, api, toast, card: els.notifyCard, allow: els.notifyAllow, later: els.notifyLater });
 
 const backup = createBackup({ db, storage });
+
+const viewer = createViewer({
+	root: els.viewer,
+	img: els.viewerImg,
+	close: els.viewerClose,
+	share: els.viewerShare,
+	onOpen: syncModal,
+	onClose: syncModal,
+	deliver,
+	toast,
+});
 
 const general = createGeneral({
 	storage,
@@ -1585,6 +1601,7 @@ function renderAttachments() {
 			const img = el("img");
 			img.src = src;
 			img.alt = "Attachment";
+			img.addEventListener("click", () => viewer.open(src, "Attachment"));
 			const remove = el("button");
 			remove.type = "button";
 			remove.setAttribute("aria-label", "Remove image");
@@ -1621,7 +1638,7 @@ function showScrim() {
 
 function syncModal() {
 	const overlay = [els.drawer, els.sheet, els.chatSheet, els.settings, els.prefs, els.voice].some((o) => o.classList.contains("open"));
-	els.app.inert = overlay || !els.lock.hidden;
+	els.app.inert = overlay || !els.lock.hidden || !els.viewer.hidden;
 }
 
 // keepSearch: a chat was opened from search results, which stay for the next look at the list.
@@ -1870,6 +1887,11 @@ function bindEvents() {
 	});
 
 	els.messages.addEventListener("click", (e) => {
+		const pic = e.target.closest(".user-images img, .tool-images img");
+		if (pic) {
+			viewer.open(pic.src, pic.alt);
+			return;
+		}
 		const btn = e.target.closest(".copy-code");
 		if (btn) copyText(btn.closest(".code").querySelector("code").textContent, btn);
 	});
@@ -1927,6 +1949,7 @@ function bindEvents() {
 	});
 	document.addEventListener("keydown", (e) => {
 		if (e.key !== "Escape" || voice.isOpen) return;
+		if (viewer.isOpen) return viewer.close();
 		if (els.chatSheet.classList.contains("open")) closeChatSheet();
 		else closeOverlays();
 	});

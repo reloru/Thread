@@ -663,6 +663,77 @@ svg {
 }
 .to-bottom svg { width: 18px; height: 18px; }
 
+/* Images open full-screen (viewer.js). */
+.user-images img, .tool-images img, .thumb img { cursor: zoom-in; }
+.viewer {
+	position: fixed;
+	inset: 0;
+	z-index: 45;
+	display: grid;
+	place-items: center;
+	overflow: hidden;
+	background: #000;
+	touch-action: none;
+	opacity: 0;
+	transition: opacity 0.2s;
+	-webkit-user-select: none;
+	user-select: none;
+}
+.viewer.open { opacity: 1; }
+.viewer img {
+	max-width: 100vw;
+	max-height: 100dvh;
+	object-fit: contain;
+	transform-origin: center;
+	-webkit-user-drag: none;
+	-webkit-touch-callout: none;
+}
+.viewer.zoomed img { cursor: grab; }
+.viewer-bar {
+	position: absolute;
+	top: calc(env(safe-area-inset-top) + 8px);
+	right: max(10px, env(safe-area-inset-right));
+	display: flex;
+	gap: 8px;
+}
+.viewer-btn {
+	width: 40px;
+	height: 40px;
+	display: grid;
+	place-items: center;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.16);
+	color: #fff;
+	-webkit-backdrop-filter: blur(8px);
+	backdrop-filter: blur(8px);
+}
+.viewer-btn svg { width: 20px; height: 20px; }
+
+/* Code highlighting (highlight.js), quiet so it reads as code, not decoration. */
+.hl-keyword { color: #8250df; }
+.hl-string { color: #0a7d4a; }
+.hl-number, .hl-literal { color: #b35900; }
+.hl-comment { color: var(--faint); font-style: italic; }
+.hl-type { color: #0b6bcb; }
+.hl-call { color: #6639ba; }
+.hl-variable { color: #c2410c; }
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) .hl-keyword { color: #c4a5ff; }
+	:root:not([data-theme="light"]) .hl-string { color: #7ee2a8; }
+	:root:not([data-theme="light"]) .hl-number, :root:not([data-theme="light"]) .hl-literal { color: #ffb86b; }
+	:root:not([data-theme="light"]) .hl-type { color: #7cc4ff; }
+	:root:not([data-theme="light"]) .hl-call { color: #d2b8ff; }
+	:root:not([data-theme="light"]) .hl-variable { color: #ff9e64; }
+}
+:root[data-theme="dark"] .hl-keyword { color: #c4a5ff; }
+:root[data-theme="dark"] .hl-string { color: #7ee2a8; }
+:root[data-theme="dark"] .hl-number, :root[data-theme="dark"] .hl-literal { color: #ffb86b; }
+:root[data-theme="dark"] .hl-type { color: #7cc4ff; }
+:root[data-theme="dark"] .hl-call { color: #d2b8ff; }
+:root[data-theme="dark"] .hl-variable { color: #ff9e64; }
+
 /* Overlays */
 .scrim {
 	position: fixed;

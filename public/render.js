@@ -4,6 +4,7 @@
 
 import { markdownBlocks } from "./markdown.js";
 import { typeset } from "./math.js";
+import { highlight } from "./highlight.js";
 
 /**
  * What to change on the page to go from the blocks shown to the new ones (both from markdownBlocks):
@@ -32,7 +33,7 @@ export function blockView(container) {
 			if (!change) return;
 			const code = change.code === undefined ? null : container.children[change.keep]?.querySelector("pre code");
 			if (code) {
-				code.textContent = change.code;
+				code.innerHTML = highlight(change.code, next[change.keep].code.lang);
 				return;
 			}
 			if (change.keep === 0) container.innerHTML = change.html ?? next.map((b) => b.html).join("");

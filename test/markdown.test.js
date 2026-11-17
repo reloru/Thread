@@ -25,11 +25,14 @@ test("link text cannot break out of attributes", () => {
 test("code blocks are escaped and labeled", () => {
 	const html = renderMarkdown('```js\nconst a = "<b>";\n```');
 	assert.match(html, /<span>js<\/span>/);
-	assert.match(html, /const a = &quot;&lt;b&gt;&quot;;/);
+	// Highlighting wraps tokens in spans; the text inside stays escaped.
+	assert.equal(html.replace(/<span class="hl-\w+">|<\/span>(?=[^<]*(<span class="hl|<\/code>))/g, "").match(/<code>([\s\S]*)<\/code>/)[1], "const a = &quot;&lt;b&gt;&quot;;");
+	assert.ok(!html.includes("<b>"));
 });
 
 test("unclosed fence renders as code while streaming", () => {
-	assert.match(renderMarkdown("```py\nprint(1)"), /<pre><code>print\(1\)<\/code><\/pre>/);
+	assert.match(renderMarkdown("```text\nprint(1)"), /<pre><code>print\(1\)<\/code><\/pre>/);
+	assert.match(renderMarkdown("```py\nprint(1)"), /<pre><code><span class="hl-call">print<\/span>\(<span class="hl-number">1<\/span>\)<\/code><\/pre>/);
 });
 
 test("fence language cannot inject markup", () => {

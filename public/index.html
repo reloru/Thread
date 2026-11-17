@@ -227,6 +227,14 @@
 		</form>
 	</div>
 
+	<div class="viewer" id="viewer" role="dialog" aria-modal="true" aria-label="Image" hidden inert>
+		<img id="viewerImg" alt="">
+		<div class="viewer-bar">
+			<button type="button" class="viewer-btn" id="viewerShare" aria-label="Share image"><svg><use href="#i-share"/></svg></button>
+			<button type="button" class="viewer-btn" id="viewerClose" aria-label="Close image"><svg><use href="#i-x"/></svg></button>
+		</div>
+	</div>
+
 	<input type="file" id="backupFile" accept="application/json,.json" hidden>
 	<div class="toast" id="toast" role="status" hidden></div>
 	<div class="sr-only" id="announce" role="status"></div>
