@@ -4,12 +4,13 @@
 
 export const PAGE_IDS = [
 	// app.js
-	"announce", "app", "attachBtn", "attachments", "chatList", "drawer", "drawerNew", "file", "form", "input",
-	"lock", "lockError", "lockForm", "menuBtn", "messages", "modelBtn", "modelList", "modelName", "newBtn",
-	"notice", "notifyAllow", "notifyCard", "notifyLater", "passInput", "passToggle", "prefs", "prefsBack",
-	"prefsBody", "prefsBtn", "scrim", "scroller", "sendBtn", "settings", "settingsBack", "settingsBody",
-	"settingsBtn", "settingsReset", "settingsTitle", "sheet", "toBottom", "toast", "toolChips", "unlockBtn",
-	"usage", "voice", "voiceBtn",
+	"announce", "app", "attachBtn", "attachments", "backupFile", "chatDelete", "chatList", "chatRename",
+	"chatSearch", "chatShare", "chatSheet", "chatSheetTitle", "drawer", "drawerNew", "editCancel", "editing",
+	"file", "form", "input", "lock", "lockError", "lockForm", "menuBtn", "messages", "modelBtn", "modelList",
+	"modelName", "newBtn", "notice", "notifyAllow", "notifyCard", "notifyLater", "passInput", "passToggle",
+	"prefs", "prefsBack", "prefsBody", "prefsBtn", "scrim", "scroller", "sendBtn", "settings", "settingsBack",
+	"settingsBody", "settingsBtn", "settingsReset", "settingsTitle", "sheet", "toBottom", "toast", "toolChips",
+	"unlockBtn", "usage", "voice", "voiceBtn",
 	// voice.js
 	"voiceChip", "voiceChipName", "voiceClose", "voiceFilter", "voiceHint", "voiceList", "voiceModel",
 	"voiceModes", "voiceMute", "voiceOrb", "voiceReply", "voiceScrim", "voiceSheet", "voiceSheetClose",

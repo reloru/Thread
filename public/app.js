@@ -6,6 +6,8 @@ import { createUsage } from "./usage.js";
 import { createNotify } from "./notify.js";
 import { createGeneral } from "./general.js";
 import { createWords } from "./words.js";
+import { makeTitle, matchesTerms, searchTerms, snippet } from "./chats.js";
+import { createBackup, deliver } from "./backup.js";
 import { checkPage } from "./page.js";
 
 // Stops here, before anything uses the page, when the page and the scripts are from different versions.
@@ -27,6 +29,8 @@ const els = {
 	toolChips: $("toolChips"),
 	usage: $("usage"),
 	notice: $("notice"),
+	editing: $("editing"),
+	editCancel: $("editCancel"),
 	toBottom: $("toBottom"),
 	menuBtn: $("menuBtn"),
 	newBtn: $("newBtn"),
@@ -34,6 +38,13 @@ const els = {
 	drawer: $("drawer"),
 	scrim: $("scrim"),
 	chatList: $("chatList"),
+	chatSearch: $("chatSearch"),
+	chatSheet: $("chatSheet"),
+	chatSheetTitle: $("chatSheetTitle"),
+	chatRename: $("chatRename"),
+	chatShare: $("chatShare"),
+	chatDelete: $("chatDelete"),
+	backupFile: $("backupFile"),
 	prefsBtn: $("prefsBtn"),
 	notifyCard: $("notifyCard"),
 	notifyAllow: $("notifyAllow"),
@@ -66,6 +77,8 @@ const KEY_TOKEN = "thread.token";
 // Earlier versions stored the passcode itself; it is swapped for a sign-in token once, then removed.
 const KEY_PASS = "thread.passcode";
 const KEY_MODEL = "thread.model";
+// What is typed and not yet sent. iPhone can close the app while it is in the background; the text comes back.
+const KEY_DRAFT = "thread.draft";
 const MAX_ATTACH = 4;
 const MAX_DOCS = 5;
 const MAX_IMAGE_EDGE = 1536;
@@ -114,6 +127,8 @@ const state = {
 	controller: null,
 	replyId: null,
 	stick: true,
+	// Set while a sent message is being edited: { id, draft }, draft being what the composer held before.
+	editing: null,
 };
 
 class AuthError extends Error {}
@@ -140,13 +155,27 @@ const usage = createUsage({ storage, el, api, canFetch: () => Boolean(state.toke
 
 const notify = createNotify({ storage, api, toast, card: els.notifyCard, allow: els.notifyAllow, later: els.notifyLater });
 
-const general = createGeneral({ storage, el, icon, notify, words, currentModel: () => currentModel() });
+const backup = createBackup({ db, storage });
+
+const general = createGeneral({
+	storage,
+	el,
+	icon,
+	notify,
+	words,
+	backup,
+	picker: els.backupFile,
+	onImport: chatsImported,
+	currentModel: () => currentModel(),
+});
 
 function init() {
 	fitViewport();
 	bindEvents();
 	els.input.enterKeyHint = COARSE ? "enter" : "send";
 	newChat();
+	els.input.value = storage.get(KEY_DRAFT) || "";
+	autosize();
 	if (state.token) {
 		start();
 		return;
@@ -296,6 +325,7 @@ function uid() {
 
 function newChat() {
 	abortStream();
+	cancelEdit();
 	const now = Date.now();
 	state.chat = { id: uid(), title: "New chat", created: now, updated: now, messages: [], tools: [] };
 	renderConversation();
@@ -304,7 +334,7 @@ function newChat() {
 
 async function openChat(id) {
 	if (id === state.chat?.id) {
-		closeOverlays();
+		closeOverlays({ keepSearch: true });
 		return;
 	}
 	abortStream();
@@ -317,10 +347,11 @@ async function openChat(id) {
 		renderChatList();
 		return;
 	}
+	cancelEdit();
 	state.chat = chat;
 	renderConversation();
 	renderToolChips();
-	closeOverlays();
+	closeOverlays({ keepSearch: true });
 	resumeReply(chat);
 }
 
@@ -350,17 +381,33 @@ async function persist(chat) {
 	}
 }
 
-function makeTitle(text) {
-	const line = text.replace(/\s+/g, " ").trim();
-	return line.length > 60 ? `${line.slice(0, 57)}…` : line || "New chat";
-}
+// The chat list, or, while the search box has text, the chats that have every word of it (title or messages).
+const search = { index: null, seq: 0, timer: 0 };
 
 async function renderChatList() {
+	const seq = ++search.seq;
+	const terms = searchTerms(els.chatSearch.value);
+	const list = els.chatList;
+	if (terms.length) {
+		// The searchable text is read once per look at the list; the list being opened or changed drops it.
+		search.index ??= db.searchIndex().then((rows) => rows.map((r) => ({ ...r, lowerTitle: r.title.toLowerCase(), lower: r.text.toLowerCase() })));
+		let rows = [];
+		try {
+			rows = await search.index;
+		} catch {
+			search.index = null;
+		}
+		if (seq !== search.seq) return;
+		const hits = rows.filter((r) => matchesTerms(terms, r.lowerTitle, r.lower));
+		list.replaceChildren(...hits.map((r) => chatRow(r, snippet(r.text, r.lower, terms))));
+		if (!hits.length) list.append(el("div", "chat-empty", "No chats match"));
+		return;
+	}
 	let chats = [];
 	try {
 		chats = await db.listChats();
 	} catch {}
-	const list = els.chatList;
+	if (seq !== search.seq) return;
 	list.replaceChildren();
 	if (!chats.length) {
 		list.append(el("div", "chat-empty", "No chats yet"));
@@ -377,15 +424,119 @@ async function renderChatList() {
 			current = g;
 			list.append(el("div", "chat-group", g));
 		}
-		const row = el("div", `chat-item${state.chat?.id === c.id ? " active" : ""}`);
-		row.dataset.id = c.id;
-		const open = el("button", "open", c.title);
-		open.type = "button";
-		const del = iconButton("i-trash", "Delete chat");
-		del.classList.add("del");
-		row.append(open, del);
-		list.append(row);
+		list.append(chatRow(c));
 	}
+}
+
+// One row of the chat list. parts: the snippet of a search hit, as [{ text, hit }].
+function chatRow(c, parts = []) {
+	const row = el("div", `chat-item${state.chat?.id === c.id ? " active" : ""}`);
+	row.dataset.id = c.id;
+	row.dataset.title = c.title;
+	const open = el("button", "open");
+	open.type = "button";
+	open.append(el("span", "chat-title", c.title));
+	if (parts.length) {
+		const line = el("span", "chat-snippet");
+		line.append(...parts.map((p) => (p.hit ? el("mark", "", p.text) : p.text)));
+		open.append(line);
+	}
+	const more = iconButton("i-more", `Options for ${c.title}`);
+	more.classList.add("more");
+	row.append(open, more);
+	return row;
+}
+
+function chatsChanged() {
+	search.index = null;
+	return renderChatList();
+}
+
+/* ---------- Chat options (the sheet behind a row's ⋯) ---------- */
+
+let sheetChat = null;
+
+function openChatSheet(id, title) {
+	sheetChat = { id, title };
+	els.chatSheetTitle.textContent = title;
+	els.chatSearch.blur();
+	els.drawer.inert = true;
+	els.chatSheet.inert = false;
+	els.chatSheet.classList.add("open");
+	els.scrim.classList.add("raised");
+	syncModal();
+}
+
+function closeChatSheet() {
+	if (!els.chatSheet.classList.contains("open")) return;
+	sheetChat = null;
+	document.activeElement?.blur();
+	els.chatSheet.classList.remove("open");
+	els.chatSheet.inert = true;
+	els.scrim.classList.remove("raised");
+	els.drawer.inert = !els.drawer.classList.contains("open");
+	syncModal();
+}
+
+async function renameChat() {
+	const target = sheetChat;
+	if (!target) return;
+	const typed = prompt("Rename chat", target.title);
+	closeChatSheet();
+	const title = (typed || "").replace(/\s+/g, " ").trim().slice(0, 200);
+	if (!title || title === target.title) return;
+	try {
+		await db.renameChat(target.id, title);
+	} catch {
+		toast("Couldn't rename the chat");
+		return;
+	}
+	if (state.chat.id === target.id) Object.assign(state.chat, { title, renamed: true });
+	chatsChanged();
+}
+
+async function shareChat() {
+	const target = sheetChat;
+	if (!target) return;
+	closeChatSheet();
+	let chat = null;
+	try {
+		chat = target.id === state.chat.id ? state.chat : await db.getChat(target.id);
+	} catch {}
+	if (!chat) {
+		toast("Chat not found");
+		return;
+	}
+	const file = backup.chatFile(chat, modelLabel);
+	const result = await deliver(file);
+	if (result === "saved") toast(`Saved ${file.name}`);
+	else if (result === "blocked") toast("Couldn't open the share sheet. Try again.");
+}
+
+async function deleteChat() {
+	const target = sheetChat;
+	if (!target || !confirm(`Delete “${target.title}”?`)) return;
+	closeChatSheet();
+	if (state.chat.id === target.id) state.chat.deleted = true;
+	try {
+		await db.deleteChat(target.id);
+	} catch {}
+	if (state.chat.id === target.id) newChat();
+	chatsChanged();
+}
+
+// Chats a backup import stored (general.js). The open chat is shown again if it was one of them.
+async function chatsImported(ids) {
+	chatsChanged();
+	if (!ids.includes(state.chat.id) || state.controller || state.busy) return;
+	try {
+		const chat = await db.getChat(state.chat.id);
+		if (!chat) return;
+		cancelEdit();
+		state.chat = chat;
+		renderConversation();
+		renderToolChips();
+	} catch {}
 }
 
 /* ---------- Rendering ---------- */
@@ -418,6 +569,7 @@ function renderConversation() {
 	for (const msg of state.chat.messages) appendMessage(msg, false);
 	updateEmpty();
 	updateRegen();
+	syncEditing();
 	state.stick = true;
 	scrollToBottom();
 }
@@ -451,6 +603,15 @@ function appendMessage(msg, live) {
 			node.append(files);
 		}
 		if (msg.content) node.append(el("div", "bubble", msg.content));
+		node.dataset.id = msg.id;
+		const actions = el("div", "actions user-actions");
+		const copy = iconButton("i-copy", "Copy message");
+		copy.hidden = !msg.content;
+		copy.addEventListener("click", () => copyText(msg.content, copy));
+		const edit = iconButton("i-edit", "Edit message");
+		edit.addEventListener("click", () => startEdit(msg));
+		actions.append(copy, edit);
+		node.append(actions);
 		view = { node };
 	} else {
 		const node = el("div", "msg assistant");
@@ -843,20 +1004,81 @@ async function sendNow() {
 	if (!params) return;
 
 	const chat = state.chat;
+	// An edited message takes the place of the original and of everything that came after it.
+	const editing = state.editing;
+	if (editing) {
+		state.editing = null;
+		const at = chat.messages.findIndex((m) => m.id === editing.id);
+		if (at !== -1) chat.messages.length = at;
+		renderConversation();
+	}
 	const userMsg = { id: uid(), role: "user", content: text, time: Date.now() };
 	if (images.length) userMsg.images = images;
 	if (docs.length) userMsg.files = docs;
 	chat.messages.push(userMsg);
-	if (chat.messages.length === 1) chat.title = makeTitle(text || docs[0]?.name || "Image");
+	if (chat.messages.length === 1 && !chat.renamed) chat.title = makeTitle(text || docs[0]?.name || "Image");
 
-	els.input.value = "";
+	// What the composer held before the edit began comes back; otherwise it empties.
+	els.input.value = editing?.draft.text ?? "";
+	state.pending = editing?.draft.pending ?? [];
+	state.docs = editing?.draft.docs ?? [];
 	autosize();
-	state.pending = [];
-	state.docs = [];
+	saveDraft();
 	renderAttachments();
 	appendMessage(userMsg, false);
 	updateEmpty();
 	await respond(chat, params);
+}
+
+// Editing a sent message: the composer takes its text and attachments, and what it held is put aside.
+function startEdit(msg) {
+	if (state.controller || state.busy) {
+		toast("Wait for the reply to finish");
+		return;
+	}
+	if (state.processing) return;
+	const draft = state.editing?.draft ?? { text: els.input.value, pending: state.pending, docs: state.docs };
+	state.editing = { id: msg.id, draft };
+	els.input.value = msg.content;
+	state.pending = [...(msg.images || [])];
+	state.docs = [...(msg.files || [])];
+	renderAttachments();
+	autosize();
+	syncEditing();
+	els.input.focus();
+}
+
+function cancelEdit() {
+	if (!state.editing) return;
+	const { draft } = state.editing;
+	state.editing = null;
+	els.input.value = draft.text;
+	state.pending = draft.pending;
+	state.docs = draft.docs;
+	renderAttachments();
+	autosize();
+	syncEditing();
+}
+
+function syncEditing() {
+	els.editing.hidden = !state.editing;
+	for (const node of els.messages.querySelectorAll(".msg.user")) node.classList.toggle("editing", node.dataset.id === state.editing?.id);
+}
+
+// The stored draft is the text waiting to be sent; while a message is edited, that is the text put aside.
+let draftTimer = 0;
+
+function saveDraft() {
+	clearTimeout(draftTimer);
+	draftTimer = 0;
+	if (state.editing) return;
+	if (els.input.value.trim()) storage.set(KEY_DRAFT, els.input.value);
+	else storage.del(KEY_DRAFT);
+}
+
+function queueDraft() {
+	clearTimeout(draftTimer);
+	draftTimer = setTimeout(saveDraft, 400);
 }
 
 // Voice mode: the user cut a finished reply off, so keep only the part that was spoken.
@@ -882,7 +1104,7 @@ async function voiceTurn(text, voiceInfo, hooks) {
 		const chat = state.chat;
 		const userMsg = { id: uid(), role: "user", content: text, time: Date.now() };
 		chat.messages.push(userMsg);
-		if (chat.messages.length === 1) chat.title = makeTitle(text);
+		if (chat.messages.length === 1 && !chat.renamed) chat.title = makeTitle(text);
 		appendMessage(userMsg, false);
 		updateEmpty();
 		return await respond(chat, params, { ...hooks, voice: voiceInfo });
@@ -1394,13 +1616,16 @@ function showScrim() {
 }
 
 function syncModal() {
-	const overlay = [els.drawer, els.sheet, els.settings, els.prefs, els.voice].some((o) => o.classList.contains("open"));
+	const overlay = [els.drawer, els.sheet, els.chatSheet, els.settings, els.prefs, els.voice].some((o) => o.classList.contains("open"));
 	els.app.inert = overlay || !els.lock.hidden;
 }
 
-function closeOverlays() {
+// keepSearch: a chat was opened from search results, which stay for the next look at the list.
+function closeOverlays({ keepSearch = false } = {}) {
+	if (!keepSearch) els.chatSearch.value = "";
 	closeSettings();
 	closePrefs();
+	closeChatSheet();
 	voice.close();
 	els.drawer.classList.remove("open");
 	els.sheet.classList.remove("open");
@@ -1413,7 +1638,7 @@ function closeOverlays() {
 }
 
 function openDrawer() {
-	renderChatList();
+	chatsChanged();
 	els.input.blur();
 	els.drawer.inert = false;
 	els.drawer.classList.add("open");
@@ -1566,7 +1791,14 @@ function bindEvents() {
 		if (state.controller) abortStream();
 		else send();
 	});
-	els.input.addEventListener("input", autosize);
+	els.input.addEventListener("input", () => {
+		autosize();
+		queueDraft();
+	});
+	// Leaving the app can be the last thing it sees before iPhone closes it.
+	document.addEventListener("visibilitychange", () => document.hidden && saveDraft());
+	window.addEventListener("pagehide", saveDraft);
+	els.editCancel.addEventListener("click", cancelEdit);
 	els.input.addEventListener("keydown", (e) => {
 		if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !COARSE) {
 			e.preventDefault();
@@ -1593,6 +1825,7 @@ function bindEvents() {
 			loadModels().catch(() => {});
 			return;
 		}
+		cancelEdit();
 		voice.open();
 	});
 	els.toolChips.addEventListener("click", (e) => {
@@ -1646,7 +1879,8 @@ function bindEvents() {
 		newChat();
 		closeOverlays();
 	});
-	els.scrim.addEventListener("click", closeOverlays);
+	// With the chat options open over the chat list, a tap outside closes the options only.
+	els.scrim.addEventListener("click", () => (els.chatSheet.classList.contains("open") ? closeChatSheet() : closeOverlays()));
 	els.modelBtn.addEventListener("click", openSheet);
 	els.settingsBtn.addEventListener("click", openSettings);
 	els.settingsBack.addEventListener("click", () => {
@@ -1663,21 +1897,19 @@ function bindEvents() {
 		const row = e.target.closest(".model-row");
 		if (row) selectModel(row.dataset.id);
 	});
-	els.chatList.addEventListener("click", async (e) => {
+	els.chatList.addEventListener("click", (e) => {
 		const row = e.target.closest(".chat-item");
 		if (!row) return;
-		if (e.target.closest(".del")) {
-			if (!confirm("Delete this chat?")) return;
-			if (state.chat.id === row.dataset.id) state.chat.deleted = true;
-			try {
-				await db.deleteChat(row.dataset.id);
-			} catch {}
-			if (state.chat.id === row.dataset.id) newChat();
-			renderChatList();
-		} else {
-			openChat(row.dataset.id);
-		}
+		if (e.target.closest(".more")) openChatSheet(row.dataset.id, row.dataset.title);
+		else openChat(row.dataset.id);
 	});
+	els.chatSearch.addEventListener("input", () => {
+		clearTimeout(search.timer);
+		search.timer = setTimeout(renderChatList, 120);
+	});
+	els.chatRename.addEventListener("click", renameChat);
+	els.chatShare.addEventListener("click", shareChat);
+	els.chatDelete.addEventListener("click", deleteChat);
 	els.prefsBtn.addEventListener("click", openPrefs);
 	els.prefsBack.addEventListener("click", () => {
 		closePrefs();
@@ -1690,7 +1922,9 @@ function bindEvents() {
 		els.passToggle.setAttribute("aria-label", show ? "Hide passcode" : "Show passcode");
 	});
 	document.addEventListener("keydown", (e) => {
-		if (e.key === "Escape" && !voice.isOpen) closeOverlays();
+		if (e.key !== "Escape" || voice.isOpen) return;
+		if (els.chatSheet.classList.contains("open")) closeChatSheet();
+		else closeOverlays();
 	});
 }
 

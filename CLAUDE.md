@@ -7,6 +7,7 @@ Mobile-first AI chat (installable web app) on Cloudflare Workers and Workers AI.
 - Unit tests: `node --test` (Node 22, no dependencies).
 - Sandbox runner tests: `python3 test/runner_test.py`.
 - Build check: `npx --yes wrangler@4.147.0 deploy --dry-run --outdir dist`. It builds the container image, so it needs Docker; CI runs it, a session without Docker cannot.
+- Trying a change in a browser without Docker: `node tools/dev-server.mjs --fake` (port 8787, passcode `dev`) runs the real Worker code in Node with stand-in bindings and canned replies; without `--fake` it calls Workers AI over REST with the session's Cloudflare credentials (billed). Drive it with Playwright at the iPhone 14 Pro Max viewport (430×932).
 
 ## Deploy
 
@@ -21,4 +22,5 @@ Pushes to `main` run the checks and deploy with `wrangler deploy` (`.github/work
 - Replies run in the `Reply` Durable Object (`src/replylog.js` holds the logic, tested in Node; `src/reply.js` wraps it), started by `POST /api/chat` with a `replyId`. Requests without one stream from the Worker as before (apps from earlier releases). The app counts every SSE data line; that count is the `after` it resumes from, so the server must never send a data line that isn't stored. A Durable Object keeps running a reply started from its fetch handler after the caller disconnects: measured with a probe Worker (5 minutes, past the 70–140 s idle eviction window); the docs don't state it.
 - Tool calls (`src/agent.js`) are not forwarded to the app; the app sees `{"thread": …}` events (`tool_prepare`, `tool_start`, `tool_result`). Argument limits are in `MAX_ARGS`.
 - Web tools (`src/web.js`) call `env.BROWSER.quickAction`, which returns a `Response` with the same `{ success, result, meta }` JSON as the REST API. To try a Quick Action from a session, POST to `https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/browser-run/<action>` with `CLOUDFLARE_API_TOKEN`. When a search engine changes its markup, capture a new `/scrape` response into `test/fixtures/search/` rather than editing one by hand.
+- Chats are stored whole in IndexedDB (`thread`, stores `meta` and `chats`). The search text lives in a separate database (`thread-search`) that is rebuilt from the chats, so the main database's version never has to change for it. Anything read from a backup file goes through `cleanChat` (`public/chats.js`).
 - Diagnosing a live problem: Workers observability (telemetry query API) has per-request wall time; GraphQL `aiInferenceAdaptiveGroups` has per-minute model calls with input and output tokens.
