@@ -2,7 +2,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { highlight } from "../public/highlight.js";
 
-const text = (html) => html.replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+// Strips tags until none are left (as in markdown.test.js), then decodes the five escapes.
+function text(html) {
+	let out = html;
+	for (let prev = null; prev !== out; ) {
+		prev = out;
+		out = out.replace(/<[^>]*>/g, "");
+	}
+	return out.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+}
 const tokens = (html, cls) => [...html.matchAll(new RegExp(`<span class="hl-${cls}">([^<]*)</span>`, "g"))].map((m) => text(m[1]));
 
 const SAMPLES = {
