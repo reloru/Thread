@@ -1,4 +1,5 @@
 import { healStreaming, renderMarkdown } from "./markdown.js";
+import { blockView } from "./render.js";
 import * as db from "./db.js";
 import { createSettings } from "./settings.js";
 import { createVoice } from "./voice.js";
@@ -635,8 +636,10 @@ function appendMessage(msg, live) {
 		actions.append(copy, regen, meta);
 		node.append(thinking, toolsBox, answer, error, actions);
 		view = { node, thinking, thinkLabel, thinkBody, toolsBox, answer, error, actions, meta, msg, toolsVersion: -1 };
+		view.thinkView = blockView(thinkBody);
+		view.answerView = blockView(answer);
 		thinking.addEventListener("toggle", () => {
-			if (thinking.open) thinkBody.innerHTML = renderMarkdown(view.msg.reasoning || "");
+			if (thinking.open) view.thinkView.render(view.msg.reasoning || "");
 		});
 		copy.addEventListener("click", () => copyText(view.msg.content, copy));
 		regen.addEventListener("click", regenerate);
@@ -661,7 +664,7 @@ function renderAssistant(view, msg, live) {
 		: msg.thinkMs
 			? `Thought for ${formatDuration(msg.thinkMs)}`
 			: "Thoughts";
-	if (hasReasoning && view.thinking.open) view.thinkBody.innerHTML = renderMarkdown(thinkingLive ? healStreaming(msg.reasoning) : msg.reasoning);
+	if (hasReasoning && view.thinking.open) view.thinkView.render(thinkingLive ? healStreaming(msg.reasoning) : msg.reasoning);
 
 	const tools = msg.tools || [];
 	if (view.toolsVersion !== (msg.toolsVersion || 0)) {
@@ -674,9 +677,10 @@ function renderAssistant(view, msg, live) {
 		if (!view.answer.querySelector(".dots")) {
 			view.answer.replaceChildren(el("div", "dots"));
 			view.answer.firstChild.append(el("i"), el("i"), el("i"));
+			view.answerView.reset();
 		}
 	} else {
-		view.answer.innerHTML = renderMarkdown(live ? healStreaming(msg.content) : msg.content);
+		view.answerView.render(live ? healStreaming(msg.content) : msg.content);
 	}
 	view.answer.classList.toggle("streaming", live && Boolean(msg.content));
 
