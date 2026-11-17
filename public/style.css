@@ -318,6 +318,15 @@ svg {
 .md .align-center { text-align: center; }
 .md .align-right { text-align: right; }
 
+/* Formulas (math.js). A wide display formula scrolls sideways instead of widening the page. */
+.math-block { margin: 0.9em 0; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+.math-block .katex-display { margin: 0; }
+.md .katex { font-size: 1.12em; }
+.md .katex-display > .katex { text-align: center; }
+.math:not([data-done]), .math-error, .math-pending { font-family: var(--mono); font-size: 0.86em; color: var(--muted); }
+.math-pending { margin: 0.9em 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.math[data-display]:not([data-done]), .math[data-display].math-error { display: block; white-space: pre-wrap; }
+
 .md.streaming > p:last-child::after,
 .md.streaming > ul:last-child > li:last-child::after,
 .md.streaming > ol:last-child > li:last-child::after {

@@ -101,9 +101,20 @@ function openSpans(t) {
 	return stack;
 }
 
+const sourceLines = (src) => String(src ?? "").replace(/\0/g, "").replace(/\r\n?/g, "\n").split("\n");
+
 export function renderMarkdown(src) {
-	const lines = String(src ?? "").replace(/\0/g, "").replace(/\r\n?/g, "\n").split("\n");
-	return renderBlocks(lines, 0);
+	return renderBlocks(sourceLines(src), 0);
+}
+
+/**
+ * The same output as renderMarkdown, as its top-level blocks: [{ html, code? }], each html being one element.
+ * A streaming reply is rendered many times; the app compares the blocks with the ones on the page and replaces
+ * only those that changed. code: { lang, text } on a fenced code block, so one that is still being written can be
+ * updated in place.
+ */
+export function markdownBlocks(src) {
+	return blocks(sourceLines(src), 0);
 }
 
 // Block structure is measured on a tab-expanded copy; source lines stay raw so that tabs
@@ -132,11 +143,18 @@ function parseFence(line) {
 }
 
 function renderBlocks(lines, depth) {
+	return blocks(lines, depth)
+		.map((b) => b.html)
+		.join("");
+}
+
+function blocks(lines, depth) {
 	if (depth > MAX_DEPTH) {
 		const text = lines.filter((l) => l.trim()).map((l) => inline(expandTabs(l).trim()));
-		return text.length ? `<p>${text.join("<br>")}</p>` : "";
+		return text.length ? [{ html: `<p>${text.join("<br>")}</p>` }] : [];
 	}
-	const out = [];
+	const found = [];
+	const out = { push: (html, extra) => found.push({ html, ...extra }) };
 	let i = 0;
 	while (i < lines.length) {
 		const line = expandTabs(lines[i]);
@@ -156,7 +174,15 @@ function renderBlocks(lines, depth) {
 				i++;
 			}
 			i++;
-			out.push(codeBlock(body.join("\n"), fence.lang));
+			const text = body.join("\n");
+			out.push(codeBlock(text, fence.lang), { code: { lang: fence.lang, text } });
+			continue;
+		}
+
+		const math = mathBlock(lines, i);
+		if (math) {
+			out.push(displayMath(math));
+			i = math.next;
 			continue;
 		}
 
@@ -208,7 +234,57 @@ function renderBlocks(lines, depth) {
 		}
 		out.push(`<p>${para.map(inline).join("<br>")}</p>`);
 	}
-	return out.join("");
+	return found;
+}
+
+// Math. Sampled from all eleven models: formulas come as $…$ or \(…\) inside a line, and as $$…$$ or \[…\]
+// around one line or on lines of their own (also indented, inside list items); none had a blank line inside.
+// Formulas are not typeset here: they become <span class="math">TeX</span>, which math.js hands to KaTeX.
+const MATH_OPEN = /^ {0,3}(\$\$|\\\[)/;
+// What may follow the closing delimiter on its line.
+const MATH_TAIL = /^[\s.,;:!?]*$/;
+const MATH_MAX_LINES = 200;
+const MATH_MAX_CHARS = 2000;
+
+/**
+ * A display formula starting at line i: { tex, next } or, while its closing delimiter hasn't arrived,
+ * { tex, next, pending }. Null when the line doesn't start one: text follows the closing delimiter, or a blank
+ * line comes before it.
+ */
+function mathBlock(lines, i) {
+	const line = expandTabs(lines[i]);
+	const m = MATH_OPEN.exec(line);
+	if (!m) return null;
+	const close = m[1] === "$$" ? "$$" : "\\]";
+	const first = line.slice(m[0].length);
+	const end = first.indexOf(close);
+	if (end !== -1) {
+		const tex = first.slice(0, end).trim();
+		return tex && MATH_TAIL.test(first.slice(end + close.length)) ? { tex, next: i + 1 } : null;
+	}
+	// Over several lines only from a line with nothing but the delimiter, as every sampled model wrote one; "$$ off
+	// today" at the end of a finished reply is then text, not a formula that never closes.
+	if (first.trim()) return null;
+	const body = [first];
+	const last = Math.min(lines.length, i + MATH_MAX_LINES);
+	for (let j = i + 1; j < last; j++) {
+		const l = lines[j];
+		if (!l.trim()) return null;
+		const at = l.indexOf(close);
+		if (at === -1) {
+			body.push(l);
+			continue;
+		}
+		body.push(l.slice(0, at));
+		const tex = body.join("\n").trim();
+		return tex && MATH_TAIL.test(l.slice(at + close.length)) ? { tex, next: j + 1 } : null;
+	}
+	return last === lines.length ? { tex: body.join("\n").trim(), next: last, pending: true } : null;
+}
+
+function displayMath({ tex, pending }) {
+	if (pending) return `<div class="math-pending">${escapeHtml(tex)}</div>`;
+	return `<div class="math-block"><span class="math" data-display>${escapeHtml(tex)}</span></div>`;
 }
 
 function parseHeading(line) {
@@ -234,7 +310,8 @@ function startsBlock(lines, i) {
 		HR.test(line) ||
 		QUOTE.test(line) ||
 		LIST_ITEM.test(line) ||
-		isTableStart(lines, i)
+		isTableStart(lines, i) ||
+		mathBlock(lines, i) !== null
 	);
 }
 
@@ -332,6 +409,11 @@ function splitRow(line) {
 		} else if (c === "\\" && t[k + 1] === "`") {
 			cur += "\\`";
 			k++;
+		} else if (!inCode && c === "\\" && t[k + 1] === "(" && t.indexOf("\\)", k + 2) !== -1) {
+			// A formula like \(|x|\) keeps its bars.
+			const end = t.indexOf("\\)", k + 2) + 2;
+			cur += t.slice(k, end);
+			k = end - 1;
 		} else if (c === "`") {
 			// A backtick with no partner later in the row is literal and must not swallow the cells after it.
 			if (inCode || t.indexOf("`", k + 1) !== -1) inCode = !inCode;
@@ -377,8 +459,8 @@ export function inline(text) {
 	const tokens = [];
 	const stash = (html) => `\0${tokens.push(html) - 1}\0`;
 
-	let s = codeSpans(text, stash);
-	s = s.replace(/\\([\\`*_{}[\]()#+\-.!|~>])/g, (_, c) => stash(escapeHtml(c)));
+	let s = mathSpans(codeSpans(text, stash), stash);
+	s = s.replace(/\\([\\`*_{}[\]()#+\-.!|~>$])/g, (_, c) => stash(escapeHtml(c)));
 	s = s.replace(LINK, (m, label, url) => {
 		if (!SAFE_URL.test(url)) return stash(escapeText(m));
 		const href = escapeHtml(url.replace(/&amp;/g, "&"));
@@ -423,6 +505,81 @@ function codeSpans(text, stash) {
 		i = partner[i];
 	}
 	return out + text.slice(pos);
+}
+
+// "\[1\]" and "\[1, 2\]" are escaped brackets around a citation, not a formula.
+const CITATION = /^\s*\^?\d+(\s*[,–-]\s*\d+)*\s*$/;
+// "I have $5 and you have 10$": a number, then words, with nothing a formula would have.
+const PROSE_AMOUNT = /^\d[^\\^_=+\-*/<>{}|]*\s[^\\^_=+\-*/<>{}|]*$/;
+const SPACE = /\s/;
+const WORD_CHAR = /[\p{L}\p{N}_]/u;
+
+/**
+ * Stashes the formulas in one line of text: \(…\), \[…\], $$…$$ and $…$. A single dollar opens one only with a
+ * non-space after it and no letter or digit before it, and the next dollar closes it only with a non-space
+ * before it and no letter or digit after it, which keeps prices ("$20 + $35 = $55") as text. One pass: each
+ * closing delimiter is searched for once per stretch of text.
+ */
+function mathSpans(text, stash) {
+	if (!text.includes("$") && !text.includes("\\(") && !text.includes("\\[")) return text;
+	const found = {};
+	const find = (close, from) => {
+		if (!(close in found) || (found[close] !== -1 && found[close] < from)) found[close] = text.indexOf(close, from);
+		return found[close];
+	};
+	const span = (tex, display) => stash(`<span class="math"${display ? " data-display" : ""}>${escapeHtml(tex.trim())}</span>`);
+	let out = "";
+	let from = 0;
+	let i = 0;
+	const take = (end, html) => {
+		out += text.slice(from, i) + html;
+		i = from = end;
+	};
+	while (i < text.length) {
+		const c = text[i];
+		if (c === "\\") {
+			const open = text[i + 1];
+			if (open === "(" || open === "[") {
+				const end = find(open === "(" ? "\\)" : "\\]", i + 2);
+				const tex = end === -1 ? "" : text.slice(i + 2, end);
+				if (tex.trim() && tex.length <= MATH_MAX_CHARS && !(open === "[" && CITATION.test(tex))) {
+					take(end + 2, span(tex, open === "["));
+					continue;
+				}
+			}
+			// Any other escaped character, a dollar included, is left for the caller.
+			i += 2;
+			continue;
+		}
+		if (c !== "$" || (i > 0 && WORD_CHAR.test(text[i - 1]))) {
+			i++;
+			continue;
+		}
+		if (text[i + 1] === "$") {
+			const end = find("$$", i + 2);
+			const tex = end === -1 ? "" : text.slice(i + 2, end);
+			if (tex.trim() && tex.length <= MATH_MAX_CHARS) take(end + 2, span(tex, true));
+			else i += 2;
+			continue;
+		}
+		const next = text[i + 1];
+		let end = -1;
+		if (next !== undefined && !SPACE.test(next)) {
+			const limit = Math.min(text.length, i + 1 + MATH_MAX_CHARS);
+			for (let j = i + 1; j < limit; j++) {
+				if (text[j] === "\\") j++;
+				else if (text[j] === "$") {
+					end = j;
+					break;
+				}
+			}
+		}
+		const after = end === -1 ? "" : (text[end + 1] ?? "");
+		const tex = end === -1 ? "" : text.slice(i + 1, end);
+		if (tex && !SPACE.test(text[end - 1]) && !(after && WORD_CHAR.test(after)) && !PROSE_AMOUNT.test(tex)) take(end + 1, span(tex, false));
+		else i++;
+	}
+	return out + text.slice(from);
 }
 
 // Drops trailing punctuation from a bare URL, and a trailing ')' unless it closes a '(' in the URL.
